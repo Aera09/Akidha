@@ -22,7 +22,11 @@ export default async (req) => {
     // Take the ULID from Supabase rather than the browser, so a tampered
     // request can't update an order that never reached ready_for_3pl.
     const order = await fetchOrder(orderID);
-    if (!order) return json(404, { error: `Order ${orderID} is not in orders_ready_for_3pl` });
+    if (!order) {
+      return json(404, {
+        error: `Order ${orderID} is no longer in orders_ready_for_3pl. Press Refresh; its status may have changed.`,
+      });
+    }
     if (!order.ULID) return json(422, { error: `Order ${orderID} has no ULID` });
 
     const result = await akidhaUpdateStatus(order.ULID, status);
@@ -30,7 +34,8 @@ export default async (req) => {
       return json(502, { error: `Akidha rejected the update (${result.status})`, akidha: result.body });
     }
 
-    await recordAkidhaStatus(orderID, status);
+    // Use the ID exactly as stored so the view's join matches.
+    await recordAkidhaStatus(order.orderID, status);
     return json(200, { ok: true, orderID, status, akidha: result.body });
   } catch (err) {
     console.error(err);

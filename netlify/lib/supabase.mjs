@@ -19,14 +19,12 @@ export async function fetchReadyOrders() {
   return res.json();
 }
 
+// Matches on the same rows the dashboard lists, comparing IDs as trimmed
+// text so a numeric/text or whitespace difference in "orderID" can't miss.
 export async function fetchOrder(orderId) {
-  const url = restUrl(
-    `orders_ready_for_3pl?select=*&orderID=eq.${encodeURIComponent(orderId)}&limit=1`
-  );
-  const res = await fetch(url, { headers: headers() });
-  if (!res.ok) throw new Error(`Supabase read failed (${res.status}): ${await res.text()}`);
-  const rows = await res.json();
-  return rows[0] || null;
+  const wanted = String(orderId).trim();
+  const rows = await fetchReadyOrders();
+  return rows.find((o) => String(o.orderID).trim() === wanted) || null;
 }
 
 // Records the status we pushed to Akidha. Once an order has a row here it
