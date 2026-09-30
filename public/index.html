@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>3PL Orders</title>
+  <style>
+    :root {
+      --bg: #f6f7f9; --card: #fff; --text: #1d2330; --muted: #6b7280; --line: #e5e7eb;
+      --accent: #2563eb; --ok: #15803d; --err: #b91c1c;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #0f1115; --card: #181b22; --text: #e6e8ee; --muted: #9aa1ad; --line: #2a2f3a;
+              --accent: #6b9bff; --ok: #4ade80; --err: #f87171; }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font: 14px/1.4 system-ui, sans-serif; background: var(--bg); color: var(--text); }
+    header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between;
+             padding: 16px; border-bottom: 1px solid var(--line); background: var(--card); }
+    h1 { font-size: 18px; margin: 0; }
+    main { padding: 16px; }
+    .table-wrap { overflow-x: auto; background: var(--card); border: 1px solid var(--line); border-radius: 8px; }
+    table { border-collapse: collapse; width: 100%; min-width: 820px; }
+    th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: middle; }
+    th { font-weight: 600; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .03em; }
+    tr:last-child td { border-bottom: 0; }
+    button, select { font: inherit; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--line);
+                     background: var(--card); color: var(--text); }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #fff; cursor: pointer; }
+    button:disabled { opacity: .5; cursor: wait; }
+    .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; background: var(--line); }
+    .SHIPMENT_PICKED_UP { color: #2563eb; }
+    .OUT_FOR_DELIVERY { color: #d97706; }
+    .COMPLETED { color: var(--ok); }
+    .RTO_INITIATED { color: var(--err); }
+    .RTO_DELIVERED { color: #9333ea; }
+    .actions { display: flex; gap: 6px; }
+    #msg { min-height: 20px; margin-bottom: 12px; }
+    #msg.ok { color: var(--ok); } #msg.err { color: var(--err); }
+    .muted { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Orders ready for 3PL</h1>
+    <div>
+      <span id="count" class="muted"></span>
+      <button id="refresh">Refresh</button>
+    </div>
+  </header>
+  <main>
+    <div id="msg"></div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Order ID</th><th>Date</th><th>Customer</th><th>Phone</th><th>Payment</th>
+            <th>Status</th><th>Akidha status</th><th>Update Akidha</th>
+          </tr>
+        </thead>
+        <tbody id="rows"><tr><td colspan="8" class="muted">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </main>
+
+  <script>
+    const rowsEl = document.getElementById("rows");
+    const msgEl = document.getElementById("msg");
+    let statuses = [];
+
+    function getKey(forcePrompt) {
+      let key = null;
+      try { key = sessionStorage.getItem("dashboardKey"); } catch {}
+      if (!key || forcePrompt) {
+        key = prompt("Dashboard password") || "";
+        try { sessionStorage.setItem("dashboardKey", key); } catch {}
+      }
+      return key;
+    }
+
+    async function api(path, options = {}, retried = false) {
+      const res = await fetch(path, {
+        ...options,
+        headers: { "content-type": "application/json", "x-dashboard-key": getKey(retried), ...options.headers },
+      });
+      if (res.status === 401 && !retried) return api(path, options, true);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+      return data;
+    }
+
+    function show(text, kind) {
+      msgEl.textContent = text;
+      msgEl.className = kind || "";
+    }
+
+    function cell(text, className) {
+      const td = document.createElement("td");
+      if (className) {
+        const span = document.createElement("span");
+        span.className = "pill " + className;
+        span.textContent = text;
+        td.append(span);
+      } else {
+        td.textContent = text;
+      }
+      return td;
+    }
+
+    function render(orders) {
+      document.getElementById("count").textContent = `${orders.length} orders`;
+      rowsEl.replaceChildren();
+      if (!orders.length) {
+        rowsEl.innerHTML = '<tr><td colspan="8" class="muted">No orders are ready for 3PL.</td></tr>';
+        return;
+      }
+      for (const order of orders) {
+        const tr = document.createElement("tr");
+        const name = [order.cx_first_name, order.cx_last_name].filter(Boolean).join(" ");
+        tr.append(
+          cell(order.orderID),
+          cell(order.orderDate ? new Date(order.orderDate).toLocaleString() : ""),
+          cell(name),
+          cell(order.cxPhone ?? ""),
+          cell(order.paymentMode ?? ""),
+          cell(order.status ?? ""),
+          order.akidha_status ? cell(order.akidha_status, order.akidha_status) : cell("—"),
+        );
+
+        const td = document.createElement("td");
+        td.className = "actions";
+        const select = document.createElement("select");
+        for (const s of statuses) select.add(new Option(s.replaceAll("_", " "), s));
+        if (order.akidha_status) select.value = order.akidha_status;
+        const button = document.createElement("button");
+        button.className = "primary";
+        button.textContent = "Send";
+        button.onclick = () => updateStatus(order.orderID, select.value, button);
+        td.append(select, button);
+        tr.append(td);
+        rowsEl.append(tr);
+      }
+    }
+
+    async function load() {
+      show("");
+      try {
+        const data = await api("/api/orders");
+        statuses = data.statuses;
+        render(data.orders);
+      } catch (err) {
+        rowsEl.innerHTML = "";
+        show(err.message, "err");
+      }
+    }
+
+    async function updateStatus(orderID, status, button) {
+      if (!confirm(`Send ${status} to Akidha for order ${orderID}?`)) return;
+      button.disabled = true;
+      show(`Updating ${orderID}…`);
+      try {
+        await api("/api/update-status", { method: "POST", body: JSON.stringify({ orderID, status }) });
+        show(`Order ${orderID} updated to ${status} in Akidha.`, "ok");
+        await load();
+        show(`Order ${orderID} updated to ${status} in Akidha.`, "ok");
+      } catch (err) {
+        show(`Order ${orderID}: ${err.message}`, "err");
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    document.getElementById("refresh").onclick = load;
+    load();
+  </script>
+</body>
+</html>
