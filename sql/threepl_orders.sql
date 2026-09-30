@@ -5,6 +5,9 @@
 --   * status becomes 'ready_for_3pl'  -> the order is inserted (or refreshed)
 --   * any later change to that order  -> its row here is updated
 -- The dashboard writes the status it pushed to Akidha into akidha_status.
+--
+-- Nothing in Order_Level_V4 is changed: the trigger only reads from it, and
+-- if syncing ever fails the write to Order_Level_V4 still goes through.
 
 CREATE TABLE IF NOT EXISTS public.threepl_orders (
     order_id          text PRIMARY KEY,
@@ -32,38 +35,43 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 BEGIN
-    IF NEW.status = 'ready_for_3pl' THEN
-        INSERT INTO public.threepl_orders (
-            order_id, ulid, order_date, payment_mode, cx_phone,
-            cx_first_name, cx_last_name, source_status
-        )
-        VALUES (
-            NEW."orderID"::text, NEW."ULID"::text, NEW."orderDate"::timestamptz,
-            NEW."paymentMode"::text, NEW."cxPhone"::text,
-            NEW.cx_first_name::text, NEW.cx_last_name::text, NEW.status::text
-        )
-        ON CONFLICT (order_id) DO UPDATE SET
-            ulid          = EXCLUDED.ulid,
-            order_date    = EXCLUDED.order_date,
-            payment_mode  = EXCLUDED.payment_mode,
-            cx_phone      = EXCLUDED.cx_phone,
-            cx_first_name = EXCLUDED.cx_first_name,
-            cx_last_name  = EXCLUDED.cx_last_name,
-            source_status = EXCLUDED.source_status,
-            updated_at    = now();
-    ELSE
-        -- Only orders that already reached ready_for_3pl are tracked.
-        UPDATE public.threepl_orders SET
-            ulid          = NEW."ULID"::text,
-            order_date    = NEW."orderDate"::timestamptz,
-            payment_mode  = NEW."paymentMode"::text,
-            cx_phone      = NEW."cxPhone"::text,
-            cx_first_name = NEW.cx_first_name::text,
-            cx_last_name  = NEW.cx_last_name::text,
-            source_status = NEW.status::text,
-            updated_at    = now()
-        WHERE order_id = NEW."orderID"::text;
-    END IF;
+    -- Never let a problem here block the write to Order_Level_V4.
+    BEGIN
+        IF NEW.status = 'ready_for_3pl' THEN
+            INSERT INTO public.threepl_orders (
+                order_id, ulid, order_date, payment_mode, cx_phone,
+                cx_first_name, cx_last_name, source_status
+            )
+            VALUES (
+                NEW."orderID"::text, NEW."ULID"::text, NEW."orderDate"::timestamptz,
+                NEW."paymentMode"::text, NEW."cxPhone"::text,
+                NEW.cx_first_name::text, NEW.cx_last_name::text, NEW.status::text
+            )
+            ON CONFLICT (order_id) DO UPDATE SET
+                ulid          = EXCLUDED.ulid,
+                order_date    = EXCLUDED.order_date,
+                payment_mode  = EXCLUDED.payment_mode,
+                cx_phone      = EXCLUDED.cx_phone,
+                cx_first_name = EXCLUDED.cx_first_name,
+                cx_last_name  = EXCLUDED.cx_last_name,
+                source_status = EXCLUDED.source_status,
+                updated_at    = now();
+        ELSE
+            -- Only orders that already reached ready_for_3pl are tracked.
+            UPDATE public.threepl_orders SET
+                ulid          = NEW."ULID"::text,
+                order_date    = NEW."orderDate"::timestamptz,
+                payment_mode  = NEW."paymentMode"::text,
+                cx_phone      = NEW."cxPhone"::text,
+                cx_first_name = NEW.cx_first_name::text,
+                cx_last_name  = NEW.cx_last_name::text,
+                source_status = NEW.status::text,
+                updated_at    = now()
+            WHERE order_id = NEW."orderID"::text;
+        END IF;
+    EXCEPTION WHEN OTHERS THEN
+        RAISE WARNING 'sync_threepl_order skipped order %: %', NEW."orderID", SQLERRM;
+    END;
     RETURN NEW;
 END;
 $$;
