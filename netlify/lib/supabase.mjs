@@ -6,7 +6,9 @@ function headers(extra = {}) {
 }
 
 function restUrl(path) {
-  return `${env("SUPABASE_URL").replace(/\/$/, "")}/rest/v1/${path}`;
+  // Accept both https://x.supabase.co and https://x.supabase.co/rest/v1/
+  const base = env("SUPABASE_URL").replace(/\/+$/, "").replace(/\/rest\/v1$/, "");
+  return `${base}/rest/v1/${path}`;
 }
 
 export async function fetchReadyOrders() {
