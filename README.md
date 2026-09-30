@@ -1,6 +1,6 @@
 # Akidha 3PL dashboard
 
-Reads orders from the Supabase table `threepl_orders`, shows them in a web
+Reads orders from the Supabase view `orders_ready_for_3pl`, shows them in a web
 page, and pushes a status change to the Akidha OMS when you click **Send**.
 
 ```
@@ -17,15 +17,15 @@ password and Supabase service key off the public site, and avoids CORS problems.
 
 ## 1. Supabase
 
-Run `sql/threepl_orders.sql` once in the Supabase SQL editor. It creates the
-`threepl_orders` table and a trigger on `Order_Level_V4`:
+Run `sql/orders_ready_for_3pl.sql` once in the Supabase SQL editor. It does not
+change `Order_Level_V4`. It creates:
 
-- when an order's status becomes `ready_for_3pl`, it is inserted into `threepl_orders`
-- any later change to that order in `Order_Level_V4` updates its row
-- the dashboard stores the status it sent to Akidha in `akidha_status`
+- `threepl_status`: the status the dashboard last sent to Akidha, per order
+- `orders_ready_for_3pl`: a live view of `Order_Level_V4` showing every order
+  that is `ready_for_3pl`, plus every order already sent to Akidha (so it stays
+  visible after its status moves on), with its Akidha status
 
-It also copies in the orders that are already `ready_for_3pl`. Running it
-again is safe.
+Running it again is safe.
 
 ## 2. Run locally
 
