@@ -16,49 +16,47 @@ function baseUrl() {
 }
 
 export async function akidhaLogin() {
-  const username = env("AKIDHA_USERNAME");
-  const password = env("AKIDHA_PASSWORD");
-  const asJson = env("AKIDHA_LOGIN_FORMAT", "form") === "json";
-
-  const res = await fetch(baseUrl() + env("AKIDHA_LOGIN_PATH", "/login"), {
+  const res = await fetch(`${baseUrl()}/api/v1/users/sessions`, {
     method: "POST",
-    redirect: "manual", // login pages often 302; the cookie is on that response
-    headers: {
-      "content-type": asJson ? "application/json" : "application/x-www-form-urlencoded",
-    },
-    body: asJson
-      ? JSON.stringify({ username, password })
-      : new URLSearchParams({ username, password }).toString(),
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      email: env("AKIDHA_EMAIL"),
+      password: env("AKIDHA_PASSWORD"),
+    }),
   });
 
   const cookie = res.headers
     .getSetCookie()
     .map((c) => c.split(";")[0])
     .find((c) => c.startsWith("JSESSIONID="));
-  if (!cookie) {
-    throw new Error(`Akidha login failed (${res.status}): no JSESSIONID cookie returned`);
+  if (!res.ok || !cookie) {
+    throw new Error(`Akidha login failed (${res.status}): ${(await res.text()).slice(0, 200)}`);
   }
   cachedSession = cookie.slice("JSESSIONID=".length);
   return cachedSession;
 }
 
 async function sendStatus(jsessionid, ulid, status) {
-  const path = env("AKIDHA_STATUS_PATH").replace("{ulid}", encodeURIComponent(ulid));
-  const res = await fetch(baseUrl() + path, {
-    method: env("AKIDHA_STATUS_METHOD", "POST"),
+  const url = `${baseUrl()}/api/v1/IN/en/orders/${encodeURIComponent(ulid)}/status/${encodeURIComponent(status)}`;
+  const res = await fetch(url, {
+    method: "PUT",
     headers: {
       "content-type": "application/json",
       cookie: `JSESSIONID=${jsessionid}`,
     },
-    body: JSON.stringify({ ulid, status }),
+    body: "{}",
   });
   return { ok: res.ok, status: res.status, body: await res.text() };
+}
+
+function sessionExpired(result) {
+  return result.status === 401 || result.status === 403 || result.body.includes("SessionKeyInvalid");
 }
 
 export async function akidhaUpdateStatus(ulid, status) {
   let result = cachedSession ? await sendStatus(cachedSession, ulid, status) : null;
   // No session yet, or it expired: log in once and retry.
-  if (!result || result.status === 401 || result.status === 403) {
+  if (!result || (!result.ok && sessionExpired(result))) {
     result = await sendStatus(await akidhaLogin(), ulid, status);
   }
   return result;

@@ -38,9 +38,13 @@ npm start                # http://localhost:8888
 2. Site configuration → Environment variables: add every key from `.env.example` except `PORT`.
 3. Deploy. The page and `/api/*` routes work the same as locally.
 
-## Akidha API settings
+## Akidha API
 
-The login and status-update requests are in `netlify/lib/akidha.mjs`. Check
-them against the Akidha API docs and adjust the env vars (`AKIDHA_LOGIN_PATH`,
-`AKIDHA_LOGIN_FORMAT`, `AKIDHA_STATUS_PATH`, `AKIDHA_STATUS_METHOD`) or the
-request body in `sendStatus()` if they differ.
+`netlify/lib/akidha.mjs` uses the same Akidha endpoints as the `mx-inbound`
+edge function:
+
+- Login: `POST /api/v1/users/sessions` with `{ email, password }`, returns a `JSESSIONID` cookie
+- Status: `PUT /api/v1/IN/en/orders/{ULID}/status/{STATUS}`
+
+Point `AKIDHA_BASE_URL` at `https://stageapi.akidha.in` while testing and
+switch to `https://api.akidha.in` for production.
