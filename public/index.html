@@ -286,7 +286,7 @@
 
   <main>
     <section class="stats">
-      <div class="stat"><div class="stat-label">Ready for 3PL</div><div class="stat-value" id="st-total">–</div><div class="stat-sub">orders in view</div></div>
+      <div class="stat"><div class="stat-label">3PL orders</div><div class="stat-value" id="st-total">–</div><div class="stat-sub">in threepl_orders</div></div>
       <div class="stat"><div class="stat-label">Not sent yet</div><div class="stat-value" id="st-pending">–</div><div class="stat-sub">no Akidha status</div></div>
       <div class="stat"><div class="stat-label">In transit</div><div class="stat-value" id="st-transit">–</div><div class="stat-sub">picked up / out for delivery</div></div>
       <div class="stat"><div class="stat-label">COD</div><div class="stat-value" id="st-cod">–</div><div class="stat-sub" id="st-cod-sub">of all orders</div></div>
@@ -475,7 +475,7 @@
           el("div", { className: "empty", innerHTML:
             `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 7l9-4 9 4v10l-9 4-9-4z"/><path d="M3 7l9 4 9-4M12 11v10"/></svg>
              <strong>${filtered ? "No matching orders" : "All caught up"}</strong>
-             ${filtered ? "Try a different search or filter." : "No orders are ready for 3PL right now."}` }))));
+             ${filtered ? "Try a different search or filter." : "No orders have reached ready_for_3pl yet."}` }))));
         return;
       }
       $("rows").replaceChildren(...rows.map((o) => {

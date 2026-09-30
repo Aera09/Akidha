@@ -20,9 +20,9 @@ export default async (req) => {
 
   try {
     // Take the ULID from Supabase rather than the browser, so a tampered
-    // request can't update an order that isn't ready_for_3pl.
+    // request can't update an order that never reached ready_for_3pl.
     const order = await fetchOrder(orderID);
-    if (!order) return json(404, { error: `Order ${orderID} is not in orders_ready_for_3pl` });
+    if (!order) return json(404, { error: `Order ${orderID} is not in threepl_orders` });
     if (!order.ULID) return json(422, { error: `Order ${orderID} has no ULID` });
 
     const result = await akidhaUpdateStatus(order.ULID, status);
