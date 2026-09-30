@@ -203,6 +203,12 @@
 
     .empty { padding: 56px 16px; text-align: center; color: var(--muted); }
     .empty svg { width: 40px; height: 40px; margin-bottom: 8px; opacity: .6; }
+    .load-error strong { color: var(--err); }
+    .load-error code {
+      display: block; max-width: 720px; margin: 8px auto 12px; padding: 10px 12px; border-radius: 8px;
+      background: var(--surface-2); border: 1px solid var(--line); color: var(--text);
+      font-size: 12px; text-align: left; white-space: pre-wrap; word-break: break-word;
+    }
     .empty strong { display: block; color: var(--text); font-size: 15px; margin-bottom: 2px; }
 
     /* ---------- Toasts ---------- */
@@ -501,6 +507,14 @@
       }));
     }
 
+    function renderLoadError(message) {
+      $("rows").replaceChildren(el("tr", {}, el("td", { colSpan: 6 },
+        el("div", { className: "empty load-error" },
+          el("strong", { textContent: "Couldn't load orders" }),
+          el("code", { textContent: message }),
+          el("div", { textContent: "Fix the problem above, then press Refresh." })))));
+    }
+
     function renderSkeleton() {
       const widths = [70, 120, 80, 50, 90, 200];
       $("rows").replaceChildren(...Array.from({ length: 5 }, () =>
@@ -528,7 +542,7 @@
         tickUpdated();
       } catch (err) {
         toast("Couldn't load orders", err.message, "err");
-        if (!state.orders.length) renderRows();
+        if (!state.orders.length) renderLoadError(err.message);
       } finally {
         btn.classList.remove("spinning");
         btn.disabled = false;
