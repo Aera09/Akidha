@@ -23,7 +23,7 @@ with `ULID`, `status` and those two columns.
 
 ## 2. Run locally
 
-Needs Node 20.6 or newer. There are no npm dependencies.
+Needs Node 20.12 or newer. There are no npm dependencies.
 
 ```bash
 cp .env.example .env     # fill in real values

@@ -4,8 +4,17 @@ import { createServer } from "node:http";
 import { readFile, readdir } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import { Readable } from "node:stream";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
-const root = new URL(".", import.meta.url).pathname;
+const root = fileURLToPath(new URL(".", import.meta.url));
+
+// Load .env if it exists. Without it the page still loads; API calls
+// return a message saying what's missing.
+try {
+  process.loadEnvFile(join(root, ".env"));
+} catch {
+  console.warn("No .env file found. Copy .env.example to .env and fill it in.");
+}
 const publicDir = join(root, "public");
 const functionsDir = join(root, "netlify/functions");
 const port = Number(process.env.PORT || 8888);
@@ -13,7 +22,7 @@ const port = Number(process.env.PORT || 8888);
 const routes = new Map();
 for (const file of await readdir(functionsDir)) {
   if (!file.endsWith(".mjs")) continue;
-  const mod = await import(join(functionsDir, file));
+  const mod = await import(pathToFileURL(join(functionsDir, file)).href);
   routes.set(mod.config?.path || `/.netlify/functions/${file.slice(0, -4)}`, mod.default);
 }
 

@@ -5,10 +5,10 @@
   "type": "module",
   "description": "Reads ready_for_3pl orders from Supabase and pushes status updates to the Akidha OMS.",
   "engines": {
-    "node": ">=20.6"
+    "node": ">=20.12"
   },
   "scripts": {
-    "start": "node --env-file=.env server.mjs",
-    "dev": "node --env-file=.env --watch server.mjs"
+    "start": "node server.mjs",
+    "dev": "node --watch server.mjs"
   }
 }

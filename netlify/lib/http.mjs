@@ -18,7 +18,10 @@ export function env(name, fallback) {
 
 // Returns an error Response when the dashboard password is wrong, else null.
 export function checkAuth(req) {
-  const expected = Buffer.from(env("DASHBOARD_PASSWORD"));
+  if (!process.env.DASHBOARD_PASSWORD) {
+    return json(500, { error: "DASHBOARD_PASSWORD is not set. Copy .env.example to .env and fill it in." });
+  }
+  const expected = Buffer.from(process.env.DASHBOARD_PASSWORD);
   const given = Buffer.from(req.headers.get("x-dashboard-key") || "");
   if (given.length !== expected.length || !timingSafeEqual(given, expected)) {
     return json(401, { error: "Wrong dashboard password" });
