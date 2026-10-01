@@ -30,12 +30,19 @@ function baseUrl() {
   return env("AKIDHA_BASE_URL").replace(/\/$/, "");
 }
 
+// Akidha logs in by email. Older .env files called it AKIDHA_USERNAME.
+function loginEmail() {
+  const email = process.env.AKIDHA_EMAIL || process.env.AKIDHA_USERNAME;
+  if (!email) throw new Error("Missing environment variable AKIDHA_EMAIL");
+  return email;
+}
+
 export async function akidhaLogin() {
   const res = await fetch(`${baseUrl()}/api/v1/users/sessions`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      email: env("AKIDHA_EMAIL"),
+      email: loginEmail(),
       password: env("AKIDHA_PASSWORD"),
     }),
   });
