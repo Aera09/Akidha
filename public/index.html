@@ -343,6 +343,7 @@
     </form>
   </dialog>
 
+  <script src="label.js"></script>
   <script>
     const $ = (id) => document.getElementById(id);
     const STATUS_LABEL = {
@@ -496,6 +497,9 @@
         const send = el("button", { className: "btn btn-primary", type: "button", textContent: "Send" });
         send.onclick = () => updateStatus(o, select.value, send);
 
+        const labelBtn = el("button", { className: "btn", type: "button", textContent: "Label", title: "Generate shipping label" });
+        labelBtn.onclick = () => generateLabel(o, labelBtn);
+
         const tr = el("tr", {},
           el("td", { dataset: { label: "Order" } }, el("div", { className: "order-id", textContent: o.orderID }), o.ULID ? el("div", { className: "ulid", textContent: o.ULID }) : el("div", { className: "ulid", textContent: "no ULID" })),
           el("td", { dataset: { label: "Customer" } }, el("div", { className: "cust" },
@@ -506,7 +510,7 @@
             date ? el("small", { textContent: relTime(date) }) : null),
           el("td", { dataset: { label: "Payment" } }, el("span", { className: `tag ${isCod(o) ? "cod" : "prepaid"}`, textContent: o.paymentMode || "—" })),
           el("td", { dataset: { label: "Akidha" } }, badge(o.akidha_status, o.akidha_updated_at)),
-          el("td", {}, el("div", { className: "actions" }, select, send)),
+          el("td", {}, el("div", { className: "actions" }, labelBtn, select, send)),
         );
         if (o.orderID === flashId) tr.classList.add("flash");
         return tr;
@@ -552,6 +556,32 @@
       } finally {
         btn.classList.remove("spinning");
         btn.disabled = false;
+      }
+    }
+
+    async function generateLabel(order, button) {
+      // Open the window right away (inside the click) so pop-up blockers allow it.
+      const win = window.open("", "_blank");
+      if (!win) {
+        toast("Pop-up blocked", "Allow pop-ups for this site to print labels.", "err");
+        return;
+      }
+      win.document.write("<p style='font:14px system-ui;padding:16px'>Generating label…</p>");
+      button.disabled = true;
+      try {
+        const data = await api(`/api/label?orderID=${encodeURIComponent(order.orderID)}`);
+        win.document.open();
+        win.document.write(window.renderLabelHtml(data, new URL("akidha-logo.png", location.href).href));
+        win.document.close();
+        const logo = win.document.querySelector("img");
+        const print = () => { win.focus(); win.print(); };
+        if (logo && !logo.complete) logo.onload = logo.onerror = print;
+        else print();
+      } catch (err) {
+        win.close();
+        toast(`Label for ${order.orderID} failed`, err.message, "err");
+      } finally {
+        button.disabled = false;
       }
     }
 

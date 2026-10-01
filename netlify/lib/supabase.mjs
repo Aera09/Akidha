@@ -38,3 +38,14 @@ export async function recordAkidhaStatus(orderId, status) {
   });
   if (!res.ok) throw new Error(`Supabase write failed (${res.status}): ${await res.text()}`);
 }
+
+// Item lines for one order from SUPER_SHEET_V1 (one row per SKU).
+export async function fetchOrderItems(orderId) {
+  const url = restUrl(
+    `SUPER_SHEET_V1?select=skuCode,medicineName,itemQty,itemDiscountedPrice` +
+      `&orderID=eq.${encodeURIComponent(orderId)}&order=medicineName.asc`
+  );
+  const res = await fetch(url, { headers: headers() });
+  if (!res.ok) throw new Error(`Supabase read failed (${res.status}): ${await res.text()}`);
+  return res.json();
+}
