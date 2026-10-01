@@ -89,7 +89,7 @@ BEGIN
                 NEW."paymentMode"::text, NEW."cxPhone"::text,
                 NEW.cx_first_name::text, NEW.cx_last_name::text,
                 NEW.cx_add_street_1::text, NEW.cx_add_street_2::text,
-                NEW.city::text, NEW.state::text, NEW.pincode::text,
+                NEW.city::text, NEW.state::text, NEW."pinCode"::text,
                 NEW.status::text
             )
             ON CONFLICT ("orderID") DO UPDATE SET
@@ -119,7 +119,7 @@ BEGIN
                 cx_add_street_2 = NEW.cx_add_street_2::text,
                 city            = NEW.city::text,
                 state           = NEW.state::text,
-                pincode         = NEW.pincode::text,
+                pincode         = NEW."pinCode"::text,
                 status          = NEW.status::text,
                 updated_at      = now()
             WHERE "orderID" = NEW."orderID"::text;
@@ -147,7 +147,7 @@ SELECT
     "paymentMode"::text, "cxPhone"::text,
     cx_first_name::text, cx_last_name::text,
     cx_add_street_1::text, cx_add_street_2::text,
-    city::text, state::text, pincode::text, status::text
+    city::text, state::text, "pinCode"::text, status::text
 FROM public."Order_Level_V4"
 WHERE upper(status::text) = 'READY_FOR_HL'
 ON CONFLICT ("orderID") DO NOTHING;
