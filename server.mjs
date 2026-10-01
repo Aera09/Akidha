@@ -36,6 +36,8 @@ const types = {
   ".css": "text/css",
   ".json": "application/json",
   ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".txt": "text/plain; charset=utf-8",
   ".ico": "image/x-icon",
 };
 

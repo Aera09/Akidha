@@ -571,12 +571,12 @@
       try {
         const data = await api(`/api/label?orderID=${encodeURIComponent(order.orderID)}`);
         win.document.open();
-        win.document.write(window.renderLabelHtml(data, new URL("akidha-logo.png", location.href).href));
+        win.document.write(window.renderLabelHtml(data, {
+          logoUrl: new URL("akidha-logo.png", location.href).href,
+          html2pdfUrl: new URL("vendor/html2pdf.bundle.min.js", location.href).href,
+        }));
         win.document.close();
-        const logo = win.document.querySelector("img");
-        const print = () => { win.focus(); win.print(); };
-        if (logo && !logo.complete) logo.onload = logo.onerror = print;
-        else print();
+        win.focus();
       } catch (err) {
         win.close();
         toast(`Label for ${order.orderID} failed`, err.message, "err");
