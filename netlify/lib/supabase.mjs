@@ -27,20 +27,14 @@ export async function fetchOrder(orderId) {
   return rows.find((o) => String(o.orderID).trim() === wanted) || null;
 }
 
-// Records the status we pushed to Akidha. Once an order has a row here it
-// stays in orders_ready_for_hl_viable even after its Order_Level_V4 status changes.
+// Records the status we pushed to Akidha on the order's row.
 export async function recordAkidhaStatus(orderId, status) {
-  const res = await fetch(restUrl("threepl_status?on_conflict=order_id"), {
-    method: "POST",
-    headers: headers({
-      "content-type": "application/json",
-      prefer: "resolution=merge-duplicates,return=minimal",
-    }),
-    body: JSON.stringify({
-      order_id: String(orderId),
-      akidha_status: status,
-      akidha_updated_at: new Date().toISOString(),
-    }),
+  const now = new Date().toISOString();
+  const url = restUrl(`orders_ready_for_hl_viable?orderID=eq.${encodeURIComponent(orderId)}`);
+  const res = await fetch(url, {
+    method: "PATCH",
+    headers: headers({ "content-type": "application/json", prefer: "return=minimal" }),
+    body: JSON.stringify({ akidha_status: status, akidha_updated_at: now, updated_at: now }),
   });
   if (!res.ok) throw new Error(`Supabase write failed (${res.status}): ${await res.text()}`);
 }

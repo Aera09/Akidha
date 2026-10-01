@@ -20,7 +20,7 @@ export default async (req) => {
 
   try {
     // Take the ULID from Supabase rather than the browser, so a tampered
-    // request can't update an order that never reached ready_for_3pl.
+    // request can't update an order that never reached READY_FOR_HL.
     const order = await fetchOrder(orderID);
     if (!order) {
       return json(404, {

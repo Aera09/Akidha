@@ -18,16 +18,17 @@ password and Supabase service key off the public site, and avoids CORS problems.
 ## 1. Supabase
 
 Run `sql/orders_ready_for_hl_viable.sql` once in the Supabase SQL editor. It
-does not change `Order_Level_V4`. It creates:
+does not change `Order_Level_V4`. It creates the table
+`orders_ready_for_hl_viable` and a trigger on `Order_Level_V4`:
 
-- `hl_viable_orders`: every order that has reached `ready_for_3pl`, filled by a
-  trigger on `Order_Level_V4` (the trigger only writes here, and a failure in
-  it never blocks a write to `Order_Level_V4`)
-- `threepl_status`: the status the dashboard last sent to Akidha, per order
-- `orders_ready_for_hl_viable`: a live view of those orders with their current
-  `Order_Level_V4` status, address, and Akidha status
+- when an order's status becomes `READY_FOR_HL`, it is inserted
+- any later change to that order (status, address, ...) updates its row, so
+  `status` always shows the current `Order_Level_V4` status
+- the dashboard stores the status it sent to Akidha in `akidha_status`
 
-Running it again is safe.
+The trigger only writes to the new table, and a failure in it never blocks a
+write to `Order_Level_V4`. It also copies in the orders that are
+`READY_FOR_HL` right now. Running it again is safe.
 
 ## 2. Run locally
 
