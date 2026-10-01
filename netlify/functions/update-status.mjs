@@ -24,7 +24,7 @@ export default async (req) => {
     const order = await fetchOrder(orderID);
     if (!order) {
       return json(404, {
-        error: `Order ${orderID} is no longer in orders_ready_for_3pl. Press Refresh; its status may have changed.`,
+        error: `Order ${orderID} is no longer in orders_ready_for_hl_viable. Press Refresh; its status may have changed.`,
       });
     }
     if (!order.ULID) return json(422, { error: `Order ${orderID} has no ULID` });

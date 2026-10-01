@@ -12,7 +12,7 @@ function restUrl(path) {
 }
 
 export async function fetchReadyOrders() {
-  const res = await fetch(restUrl("orders_ready_for_3pl?select=*&order=orderDate.desc.nullslast"), {
+  const res = await fetch(restUrl("orders_ready_for_hl_viable?select=*&order=orderDate.desc.nullslast"), {
     headers: headers(),
   });
   if (!res.ok) throw new Error(`Supabase read failed (${res.status}): ${await res.text()}`);
@@ -28,7 +28,7 @@ export async function fetchOrder(orderId) {
 }
 
 // Records the status we pushed to Akidha. Once an order has a row here it
-// stays in orders_ready_for_3pl even after its Order_Level_V4 status changes.
+// stays in orders_ready_for_hl_viable even after its Order_Level_V4 status changes.
 export async function recordAkidhaStatus(orderId, status) {
   const res = await fetch(restUrl("threepl_status?on_conflict=order_id"), {
     method: "POST",

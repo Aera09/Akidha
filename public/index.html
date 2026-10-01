@@ -160,6 +160,7 @@
       background: var(--accent-soft); color: var(--accent);
     }
     .cust-name { font-weight: 500; }
+    .addr { color: var(--muted); font-size: 12px; max-width: 240px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .phone {
       color: var(--muted); font-size: 12px; background: none; border: 0; padding: 0; cursor: pointer;
     }
@@ -286,7 +287,7 @@
 
   <main>
     <section class="stats">
-      <div class="stat"><div class="stat-label">3PL orders</div><div class="stat-value" id="st-total">–</div><div class="stat-sub">in orders_ready_for_3pl</div></div>
+      <div class="stat"><div class="stat-label">3PL orders</div><div class="stat-value" id="st-total">–</div><div class="stat-sub">in orders_ready_for_hl_viable</div></div>
       <div class="stat"><div class="stat-label">Not sent yet</div><div class="stat-value" id="st-pending">–</div><div class="stat-sub">no Akidha status</div></div>
       <div class="stat"><div class="stat-label">In transit</div><div class="stat-value" id="st-transit">–</div><div class="stat-sub">picked up / out for delivery</div></div>
       <div class="stat"><div class="stat-label">COD</div><div class="stat-value" id="st-cod">–</div><div class="stat-sub" id="st-cod-sub">of all orders</div></div>
@@ -296,7 +297,7 @@
       <div class="toolbar">
         <label class="search">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
-          <input id="q" type="search" placeholder="Search order ID, name, phone…" autocomplete="off">
+          <input id="q" type="search" placeholder="Search order ID, name, phone, city, pincode…" autocomplete="off">
         </label>
         <div class="chips" id="chips"></div>
       </div>
@@ -413,6 +414,9 @@
     }
     const fullName = (o) => [o.cx_first_name, o.cx_last_name].filter(Boolean).join(" ");
     const initials = (o) => (((o.cx_first_name || "")[0] || "") + ((o.cx_last_name || "")[0] || "")).toUpperCase() || "?";
+    const joinParts = (parts, sep) => parts.map((p) => String(p ?? "").trim()).filter(Boolean).join(sep);
+    const shortAddress = (o) => joinParts([joinParts([o.city, o.state], ", "), o.pincode], " – ");
+    const fullAddress = (o) => joinParts([o.cx_add_street_1, o.cx_add_street_2, o.city, o.state, o.pincode], ", ");
     const isCod = (o) => /cod|cash/i.test(o.paymentMode || "");
 
     function relTime(date) {
@@ -463,7 +467,8 @@
         if (state.filter === "NONE" && o.akidha_status) return false;
         if (!["ALL", "NONE"].includes(state.filter) && o.akidha_status !== state.filter) return false;
         if (!q) return true;
-        return [o.orderID, fullName(o), o.cxPhone, o.ULID].some((v) => String(v ?? "").toLowerCase().includes(q));
+        return [o.orderID, fullName(o), o.cxPhone, o.ULID, o.city, o.state, o.pincode]
+          .some((v) => String(v ?? "").toLowerCase().includes(q));
       });
     }
 
@@ -495,7 +500,8 @@
           el("td", { dataset: { label: "Order" } }, el("div", { className: "order-id", textContent: o.orderID }), o.ULID ? el("div", { className: "ulid", textContent: o.ULID }) : el("div", { className: "ulid", textContent: "no ULID" })),
           el("td", { dataset: { label: "Customer" } }, el("div", { className: "cust" },
             el("div", { className: "avatar", textContent: initials(o) }),
-            el("div", {}, el("div", { className: "cust-name", textContent: fullName(o) || "—" }), phone))),
+            el("div", {}, el("div", { className: "cust-name", textContent: fullName(o) || "—" }), phone,
+              shortAddress(o) ? el("div", { className: "addr", textContent: shortAddress(o), title: fullAddress(o) }) : null))),
           el("td", { className: "date", dataset: { label: "Date" } }, date ? date.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "—",
             date ? el("small", { textContent: relTime(date) }) : null),
           el("td", { dataset: { label: "Payment" } }, el("span", { className: `tag ${isCod(o) ? "cod" : "prepaid"}`, textContent: o.paymentMode || "—" })),
