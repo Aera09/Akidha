@@ -10,10 +10,14 @@ const root = fileURLToPath(new URL(".", import.meta.url));
 
 // Load .env if it exists. Without it the page still loads; API calls
 // return a message saying what's missing.
+const envPath = join(root, ".env");
 try {
-  process.loadEnvFile(join(root, ".env"));
-} catch {
-  console.warn("No .env file found. Copy .env.example to .env and fill it in.");
+  process.loadEnvFile(envPath);
+  const names = Object.keys(process.env).filter((k) => /^(SUPABASE|AKIDHA|DASHBOARD)_/.test(k));
+  console.log(`Loaded ${envPath}: ${names.join(", ") || "no SUPABASE_/AKIDHA_/DASHBOARD_ settings"}`);
+} catch (err) {
+  console.warn(`Could not read ${envPath}: ${err.message}`);
+  console.warn("Copy .env.example to .env and fill it in.");
 }
 const publicDir = join(root, "public");
 const functionsDir = join(root, "netlify/functions");
