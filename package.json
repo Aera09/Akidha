@@ -8,6 +8,7 @@
     "node": ">=20.12"
   },
   "scripts": {
+    "setup": "powershell -NoProfile -ExecutionPolicy Bypass -File setup-env.ps1",
     "start": "node server.mjs",
     "dev": "node --watch server.mjs"
   }

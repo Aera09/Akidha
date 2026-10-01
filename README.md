@@ -34,12 +34,16 @@ write to `Order_Level_V4`. It also copies in the orders that are
 
 Needs Node 20.12 or newer. There are no npm dependencies.
 
-```bash
-cp .env.example .env     # fill in real values
+On Windows, create `.env` by answering a few questions (keys and passwords are
+typed hidden):
+
+```powershell
+npm run setup
 npm start                # http://localhost:8888
 ```
 
-`npm run dev` restarts the server when you edit a file.
+Or copy `.env.example` to `.env` and fill it in by hand. `npm start` prints
+which settings it loaded from `.env`; restart it after changing `.env`.
 
 ## 3. Deploy to Netlify
 
