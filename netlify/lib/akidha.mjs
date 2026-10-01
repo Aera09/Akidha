@@ -1,5 +1,3 @@
-import { env } from "./http.mjs";
-
 export const STATUSES = [
   "SHIPMENT_PICKED_UP",
   "OUT_FOR_DELIVERY",
@@ -26,15 +24,31 @@ export function allowedNext(currentStatus) {
 // Reused across invocations while the function instance stays warm.
 let cachedSession = null;
 
+// AKIDHA_ENV picks a set of settings, like the ENV switch in mx-inbound:
+//   AKIDHA_ENV=PROD  -> AKIDHA_BASE_URL_PROD,  AKIDHA_EMAIL_PROD,  AKIDHA_PASSWORD_PROD
+//   AKIDHA_ENV=STAGE -> AKIDHA_BASE_URL_STAGE, AKIDHA_EMAIL_STAGE, AKIDHA_PASSWORD_STAGE
+// Without AKIDHA_ENV the plain names (AKIDHA_BASE_URL, ...) are used. With it,
+// only that environment's values count, so PROD never borrows STAGE settings.
+function akidhaSetting(name) {
+  const mode = (process.env.AKIDHA_ENV || "").trim().toUpperCase();
+  const key = mode ? `${name}_${mode}` : name;
+  const value = (process.env[key] || "").trim();
+  if (!value) throw new Error(`Missing environment variable ${key}`);
+  return value;
+}
+
 function baseUrl() {
-  return env("AKIDHA_BASE_URL").replace(/\/$/, "");
+  return akidhaSetting("AKIDHA_BASE_URL").replace(/\/$/, "");
 }
 
 // Akidha logs in by email. Older .env files called it AKIDHA_USERNAME.
 function loginEmail() {
-  const email = process.env.AKIDHA_EMAIL || process.env.AKIDHA_USERNAME;
-  if (!email) throw new Error("Missing environment variable AKIDHA_EMAIL");
-  return email;
+  try {
+    return akidhaSetting("AKIDHA_EMAIL");
+  } catch (err) {
+    if (!process.env.AKIDHA_ENV && process.env.AKIDHA_USERNAME) return process.env.AKIDHA_USERNAME.trim();
+    throw err;
+  }
 }
 
 export async function akidhaLogin() {
@@ -43,7 +57,7 @@ export async function akidhaLogin() {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       email: loginEmail(),
-      password: env("AKIDHA_PASSWORD"),
+      password: akidhaSetting("AKIDHA_PASSWORD"),
     }),
   });
 

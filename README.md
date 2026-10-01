@@ -55,5 +55,7 @@ edge function:
 - Login: `POST /api/v1/users/sessions` with `{ email, password }`, returns a `JSESSIONID` cookie
 - Status: `PUT /api/v1/IN/en/orders/{ULID}/status/{STATUS}`
 
-Point `AKIDHA_BASE_URL` at `https://stageapi.akidha.in` while testing and
-switch to `https://api.akidha.in` for production.
+Set `AKIDHA_ENV` to `STAGE` or `PROD` to choose which `AKIDHA_*_STAGE` or
+`AKIDHA_*_PROD` settings are used (see `.env.example`), and restart the server
+after changing it. Statuses move one step at a time: picked up, out for
+delivery, then delivered or RTO initiated, then RTO delivered.
