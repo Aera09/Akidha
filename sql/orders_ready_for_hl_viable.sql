@@ -47,8 +47,12 @@ CREATE TABLE IF NOT EXISTS public.orders_ready_for_hl_viable (
     hl_ready_at       timestamptz NOT NULL DEFAULT now(),
     akidha_status     text,          -- last status the dashboard sent to Akidha
     akidha_updated_at timestamptz,
-    updated_at        timestamptz NOT NULL DEFAULT now()
+    updated_at        timestamptz NOT NULL DEFAULT now(),
+    "finalAmount"     numeric
 );
+
+-- Columns added after the table was first created.
+ALTER TABLE public.orders_ready_for_hl_viable ADD COLUMN IF NOT EXISTS "finalAmount" numeric;
 
 -- Only the service role key (used by the dashboard's server functions) can
 -- read or write it.
@@ -68,6 +72,19 @@ EXCEPTION WHEN OTHERS THEN
 END;
 $$;
 
+-- finalAmount -> number, or NULL if it can't be read (e.g. "₹950" or "").
+CREATE OR REPLACE FUNCTION public.hl_safe_numeric(v text)
+RETURNS numeric
+LANGUAGE plpgsql
+IMMUTABLE
+AS $$
+BEGIN
+    RETURN nullif(regexp_replace(v, '[^0-9.\-]', '', 'g'), '')::numeric;
+EXCEPTION WHEN OTHERS THEN
+    RETURN NULL;
+END;
+$$;
+
 CREATE OR REPLACE FUNCTION public.sync_hl_viable_order()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -81,7 +98,7 @@ BEGIN
             INSERT INTO public.orders_ready_for_hl_viable (
                 "orderID", "ULID", "orderDate", "paymentMode", "cxPhone",
                 cx_first_name, cx_last_name, cx_add_street_1, cx_add_street_2,
-                city, state, pincode, status
+                city, state, pincode, status, "finalAmount"
             )
             VALUES (
                 NEW."orderID"::text, NEW."ULID"::text,
@@ -90,7 +107,8 @@ BEGIN
                 NEW.cx_first_name::text, NEW.cx_last_name::text,
                 NEW.cx_add_street_1::text, NEW.cx_add_street_2::text,
                 NEW.city::text, NEW.state::text, NEW."pinCode"::text,
-                NEW.status::text
+                NEW.status::text,
+                public.hl_safe_numeric(NEW."finalAmount"::text)
             )
             ON CONFLICT ("orderID") DO UPDATE SET
                 "ULID"          = EXCLUDED."ULID",
@@ -105,6 +123,7 @@ BEGIN
                 state           = EXCLUDED.state,
                 pincode         = EXCLUDED.pincode,
                 status          = EXCLUDED.status,
+                "finalAmount"   = EXCLUDED."finalAmount",
                 updated_at      = now();
         ELSE
             -- Only orders that already reached READY_FOR_HL are tracked.
@@ -121,6 +140,7 @@ BEGIN
                 state           = NEW.state::text,
                 pincode         = NEW."pinCode"::text,
                 status          = NEW.status::text,
+                "finalAmount"   = public.hl_safe_numeric(NEW."finalAmount"::text),
                 updated_at      = now()
             WHERE "orderID" = NEW."orderID"::text;
         END IF;
@@ -140,14 +160,22 @@ FOR EACH ROW EXECUTE FUNCTION public.sync_hl_viable_order();
 INSERT INTO public.orders_ready_for_hl_viable (
     "orderID", "ULID", "orderDate", "paymentMode", "cxPhone",
     cx_first_name, cx_last_name, cx_add_street_1, cx_add_street_2,
-    city, state, pincode, status
+    city, state, pincode, status, "finalAmount"
 )
 SELECT
     "orderID"::text, "ULID"::text, public.hl_safe_timestamp("orderDate"::text),
     "paymentMode"::text, "cxPhone"::text,
     cx_first_name::text, cx_last_name::text,
     cx_add_street_1::text, cx_add_street_2::text,
-    city::text, state::text, "pinCode"::text, status::text
+    city::text, state::text, "pinCode"::text, status::text,
+    public.hl_safe_numeric("finalAmount"::text)
 FROM public."Order_Level_V4"
 WHERE upper(status::text) = 'READY_FOR_HL'
 ON CONFLICT ("orderID") DO NOTHING;
+
+-- Fill finalAmount for orders that were already in the table.
+UPDATE public.orders_ready_for_hl_viable t
+SET "finalAmount" = public.hl_safe_numeric(o."finalAmount"::text)
+FROM public."Order_Level_V4" o
+WHERE o."orderID"::text = t."orderID"
+  AND t."finalAmount" IS NULL;

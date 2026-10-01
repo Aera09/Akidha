@@ -23,8 +23,11 @@ export default async (req) => {
     }));
     if (!items.length) return json(404, { error: `No items for order ${orderID} in SUPER_SHEET_V1` });
 
-    // itemDiscountedPrice is taken as the price of one unit.
-    const orderValue = Math.round(items.reduce((sum, i) => sum + i.price * i.qty, 0) * 100) / 100;
+    // Use the order's finalAmount (from Order_Level_V4). If it's missing, fall
+    // back to the item lines, taking itemDiscountedPrice as one unit's price.
+    const finalAmount = order.finalAmount === null || order.finalAmount === undefined ? NaN : Number(order.finalAmount);
+    const itemsTotal = items.reduce((sum, i) => sum + i.price * i.qty, 0);
+    const orderValue = Math.round((Number.isFinite(finalAmount) ? finalAmount : itemsTotal) * 100) / 100;
     const totalQty = items.reduce((sum, i) => sum + i.qty, 0);
 
     return json(200, {
