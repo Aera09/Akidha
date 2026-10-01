@@ -419,7 +419,7 @@
     const joinParts = (parts, sep) => parts.map((p) => String(p ?? "").trim()).filter(Boolean).join(sep);
     const shortAddress = (o) => joinParts([joinParts([o.city, o.state], ", "), o.pincode], " – ");
     const fullAddress = (o) => joinParts([o.cx_add_street_1, o.cx_add_street_2, o.city, o.state, o.pincode], ", ");
-    const isCod = (o) => /cod|cash/i.test(o.paymentMode || "");
+    const isCod = (o) => /\bcod\b|cash|\bpod\b|pay on delivery/i.test(o.paymentMode || "");
 
     function relTime(date) {
       const diff = (Date.now() - date.getTime()) / 1000;

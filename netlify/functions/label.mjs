@@ -1,7 +1,7 @@
 import { checkAuth, json } from "../lib/http.mjs";
 import { fetchOrder, fetchOrderItems } from "../lib/supabase.mjs";
 
-const isCod = (paymentMode) => /cod|cash/i.test(paymentMode || "");
+const isCod = (paymentMode) => /\bcod\b|cash|\bpod\b|pay on delivery/i.test(paymentMode || "");
 
 export default async (req) => {
   if (req.method !== "GET") return json(405, { error: "Use GET" });
