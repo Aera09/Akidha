@@ -8,6 +8,21 @@ export const STATUSES = [
   "RTO_DELIVERED",
 ];
 
+// Statuses allowed next, by the status last sent to Akidha ("" = not sent).
+// Orders move one step at a time; COMPLETED and RTO_DELIVERED are final.
+export const NEXT_STATUSES = {
+  "": ["SHIPMENT_PICKED_UP"],
+  SHIPMENT_PICKED_UP: ["OUT_FOR_DELIVERY"],
+  OUT_FOR_DELIVERY: ["COMPLETED", "RTO_INITIATED"],
+  RTO_INITIATED: ["RTO_DELIVERED"],
+  COMPLETED: [],
+  RTO_DELIVERED: [],
+};
+
+export function allowedNext(currentStatus) {
+  return NEXT_STATUSES[currentStatus || ""] ?? [];
+}
+
 // Reused across invocations while the function instance stays warm.
 let cachedSession = null;
 

@@ -1,6 +1,6 @@
 import { checkAuth, json } from "../lib/http.mjs";
 import { fetchOrder, recordAkidhaStatus } from "../lib/supabase.mjs";
-import { STATUSES, akidhaUpdateStatus } from "../lib/akidha.mjs";
+import { STATUSES, allowedNext, akidhaUpdateStatus } from "../lib/akidha.mjs";
 
 export default async (req) => {
   if (req.method !== "POST") return json(405, { error: "Use POST" });
@@ -28,6 +28,17 @@ export default async (req) => {
       });
     }
     if (!order.ULID) return json(422, { error: `Order ${orderID} has no ULID` });
+
+    // Statuses go one step at a time (e.g. no Delivered before Out for delivery).
+    const allowed = allowedNext(order.akidha_status);
+    if (!allowed.includes(status)) {
+      const current = order.akidha_status || "not sent";
+      return json(409, {
+        error: allowed.length
+          ? `Order ${orderID} is ${current}; next step must be ${allowed.join(" or ")}.`
+          : `Order ${orderID} is already ${current}; no further updates.`,
+      });
+    }
 
     const result = await akidhaUpdateStatus(order.ULID, status);
     if (!result.ok) {
