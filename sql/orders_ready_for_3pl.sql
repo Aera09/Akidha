@@ -1,10 +1,12 @@
--- Run once in the Supabase SQL editor. Nothing in Order_Level_V4 is changed.
+-- Run in the Supabase SQL editor. Nothing in Order_Level_V4 is changed.
 --
--- orders_ready_for_3pl is a live view over Order_Level_V4. It shows:
---   * every order whose status is 'ready_for_3pl', and
---   * every order the dashboard has already sent to Akidha, even after its
---     status in Order_Level_V4 moves on.
--- The status sent to Akidha is kept in the small threepl_status table.
+-- orders_ready_for_3pl is a live view over Order_Level_V4. An order shows up
+-- as soon as its status is 'ready_for_3pl' and stays while its status moves
+-- through the later 3PL statuses listed below. It also stays once the
+-- dashboard has sent it to Akidha (kept in threepl_status).
+--
+-- Edit the status list to match the values your Order_Level_V4 really uses:
+--   SELECT DISTINCT status FROM public."Order_Level_V4" ORDER BY 1;
 
 -- Clean up the trigger-based version, if it was installed earlier.
 DROP TRIGGER IF EXISTS trg_sync_threepl_order ON public."Order_Level_V4";
@@ -39,5 +41,12 @@ SELECT
     s.akidha_updated_at
 FROM public."Order_Level_V4" o
 LEFT JOIN public.threepl_status s ON s.order_id = o."orderID"::text
-WHERE o.status = 'ready_for_3pl'
+WHERE lower(o.status) IN (
+        'ready_for_3pl',
+        'shipment_picked_up',
+        'out_for_delivery',
+        'completed',
+        'rto_initiated',
+        'rto_delivered'
+      )
    OR s.order_id IS NOT NULL;
