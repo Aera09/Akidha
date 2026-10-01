@@ -17,13 +17,15 @@ password and Supabase service key off the public site, and avoids CORS problems.
 
 ## 1. Supabase
 
-Run `sql/orders_ready_for_hl_viable.sql` once in the Supabase SQL editor. It does not
-change `Order_Level_V4`. It creates:
+Run `sql/orders_ready_for_hl_viable.sql` once in the Supabase SQL editor. It
+does not change `Order_Level_V4`. It creates:
 
+- `hl_viable_orders`: every order that has reached `ready_for_3pl`, filled by a
+  trigger on `Order_Level_V4` (the trigger only writes here, and a failure in
+  it never blocks a write to `Order_Level_V4`)
 - `threepl_status`: the status the dashboard last sent to Akidha, per order
-- `orders_ready_for_hl_viable`: a live view of `Order_Level_V4` showing every order
-  that is `ready_for_3pl`, plus every order already sent to Akidha (so it stays
-  visible after its status moves on), with its Akidha status
+- `orders_ready_for_hl_viable`: a live view of those orders with their current
+  `Order_Level_V4` status, address, and Akidha status
 
 Running it again is safe.
 
