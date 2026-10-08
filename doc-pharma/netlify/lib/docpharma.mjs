@@ -80,7 +80,7 @@ export function buildPayload(order, items) {
     order_details: orderDetails,
     discount: 0,
     shipping_charges: shipping,
-    order_type: setting("DOCPHARMA_ORDER_TYPE", "HL"),
+    order_type: setting("DOCPHARMA_ORDER_TYPE", "SDD_NDD"),
   };
   const webhookUrl = webhookUrlFor();
   if (webhookUrl) payload.webhook_url = webhookUrl;

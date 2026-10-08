@@ -47,7 +47,7 @@ npm start                 # http://localhost:8889
 | `amount`, `collectible` | `finalAmount` (collectible is 0 for Prepaid) |
 | `order_details[]` | `SUPER_SHEET_V1`: `skuCode`, `medicineName`, `itemQty`, `itemMRP`; `discount_amount` = (MRP − `itemDiscountedPrice`) × qty |
 | `shipping_charges` | `SUPER_SHEET_V1.shippingCost` |
-| `order_type` | `DOCPHARMA_ORDER_TYPE_<ENV>` (default `HL`) |
+| `order_type` | `SDD_NDD` (can be overridden with `DOCPHARMA_ORDER_TYPE_<ENV>`) |
 | `webhook_url` | `DOCPHARMA_PUBLIC_URL/api/docpharma-webhook?token=DOCPHARMA_WEBHOOK_SECRET`, when both are set |
 | `vendor_code` | `DOCPHARMA_VENDOR_CODE` if set |
 
