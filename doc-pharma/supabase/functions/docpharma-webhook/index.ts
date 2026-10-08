@@ -56,7 +56,9 @@ async function db(path: string, init: RequestInit = {}) {
     },
   });
   if (!res.ok) throw new Error(`Supabase ${init.method || "GET"} ${path.split("?")[0]} failed (${res.status}): ${await res.text()}`);
-  return res.status === 204 ? null : res.json();
+  // Writes come back empty (prefer: return=minimal), reads come back as JSON.
+  const text = await res.text();
+  return text ? JSON.parse(text) : null;
 }
 
 async function findOrder(partnerOrderId: string) {

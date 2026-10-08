@@ -36,8 +36,18 @@ amount), like `orders_ready_for_hl_viable` does for `READY_FOR_HL`. It creates t
 `Order_Level_V4` that only reads it. It does not change `Order_Level_V4` or
 the HL/Viable table. Running it again is safe.
 
-Then **Project Settings → API → Exposed schemas**: add `doc_pharma` and save.
-The dashboard and the edge function read the schema through the API.
+Then expose `doc_pharma` to the API (the dashboard and the edge function read
+it through the API). In this project the list is set on the `authenticator`
+role, which overrides **Project Settings → API → Exposed schemas**, so add it
+there with SQL, keeping the schemas already listed:
+
+```sql
+select rolconfig from pg_roles where rolname = 'authenticator';   -- current list
+ALTER ROLE authenticator
+SET pgrst.db_schemas = 'public, myrx, myrx_production, inventory, doc_pharma';
+NOTIFY pgrst, 'reload config';
+NOTIFY pgrst, 'reload schema';
+```
 
 ## 2. Supabase: edge function (webhook)
 
