@@ -48,8 +48,29 @@ npm start                 # http://localhost:8889
 | `order_details[]` | `SUPER_SHEET_V1`: `skuCode`, `medicineName`, `itemQty`, `itemMRP`; `discount_amount` = (MRP − `itemDiscountedPrice`) × qty |
 | `shipping_charges` | `SUPER_SHEET_V1.shippingCost` |
 | `order_type` | `DOCPHARMA_ORDER_TYPE_<ENV>` (default `HL`) |
-| `webhook_url`, `vendor_code` | `DOCPHARMA_WEBHOOK_URL`, `DOCPHARMA_VENDOR_CODE` if set |
+| `webhook_url` | `DOCPHARMA_PUBLIC_URL/api/docpharma-webhook?token=DOCPHARMA_WEBHOOK_SECRET`, when both are set |
+| `vendor_code` | `DOCPHARMA_VENDOR_CODE` if set |
 
 Preview shows the exact JSON before anything is sent. An order is not sent if
 the name, 10-digit mobile, 6-digit pincode, address or items are missing, and
 an order already placed cannot be placed again.
+
+## Status updates (webhook)
+
+Run `sql/docpharma_webhook.sql` once (after `docpharma_orders.sql`). It adds
+status columns to `docpharma_orders` and a `docpharma_webhook_logs` table.
+
+Set `DOCPHARMA_PUBLIC_URL` (the deployed Netlify site URL) and
+`DOCPHARMA_WEBHOOK_SECRET` (any long random text). Every order placed after
+that tells DocPharma to post updates to
+`DOCPHARMA_PUBLIC_URL/api/docpharma-webhook?token=...`. The endpoint:
+
+- rejects calls without the right token (401)
+- stores every call in `docpharma_webhook_logs`, matched to an order or not
+- updates the order's `dp_order_status`, `dp_suborder_status`,
+  `dp_status_code`, `dp_logistic_status`, `dp_status_reason` from the latest
+  event, and keeps the tracking number/URL, courier and invoice URL
+
+The dashboard shows the latest status, courier, reason, and Track / Invoice
+links. DocPharma cannot reach `localhost`, so webhooks only arrive once the
+site is deployed. Orders placed before the URL was set won't send updates.

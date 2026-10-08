@@ -17,6 +17,14 @@ function setting(name, fallback) {
 
 const optional = (name) => (process.env[name] || "").trim();
 
+// Where DocPharma should post status updates: this site's webhook function,
+// with the shared secret as ?token=. Empty until both settings are set.
+export function webhookUrlFor() {
+  const site = optional("DOCPHARMA_PUBLIC_URL").replace(/\/+$/, "");
+  const secret = optional("DOCPHARMA_WEBHOOK_SECRET");
+  return site && secret ? `${site}/api/docpharma-webhook?token=${encodeURIComponent(secret)}` : "";
+}
+
 // Last 10 digits, so "+91 98765 43210" becomes "9876543210".
 const mobile10 = (phone) => String(phone ?? "").replace(/\D/g, "").slice(-10);
 
@@ -74,7 +82,8 @@ export function buildPayload(order, items) {
     shipping_charges: shipping,
     order_type: setting("DOCPHARMA_ORDER_TYPE", "HL"),
   };
-  if (optional("DOCPHARMA_WEBHOOK_URL")) payload.webhook_url = optional("DOCPHARMA_WEBHOOK_URL");
+  const webhookUrl = webhookUrlFor();
+  if (webhookUrl) payload.webhook_url = webhookUrl;
   if (optional("DOCPHARMA_VENDOR_CODE")) payload.vendor_code = optional("DOCPHARMA_VENDOR_CODE");
 
   const problems = [];

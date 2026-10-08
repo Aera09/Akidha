@@ -47,3 +47,13 @@ export async function recordPlacement(orderId, fields) {
   });
   if (!res.ok) throw new Error(`Supabase write failed (${res.status}): ${await res.text()}`);
 }
+
+// Stores one webhook call as received.
+export async function logWebhook(row) {
+  const res = await fetch(restUrl("docpharma_webhook_logs"), {
+    method: "POST",
+    headers: headers({ "content-type": "application/json", prefer: "return=minimal" }),
+    body: JSON.stringify(row),
+  });
+  if (!res.ok) throw new Error(`Supabase write failed (${res.status}): ${await res.text()}`);
+}
