@@ -35,6 +35,9 @@ $$;
 -- Text -> IST timestamp. A value with a time zone (e.g. ...Z or +00) is
 -- converted to IST; a value without one is taken as IST already.
 -- Anything unreadable becomes NULL instead of an error.
+-- An earlier version returned timestamptz; the return type can't be replaced
+-- in place, so drop it first (only this helper, no data).
+DROP FUNCTION IF EXISTS doc_pharma.safe_timestamp(text);
 CREATE OR REPLACE FUNCTION doc_pharma.safe_timestamp(v text)
 RETURNS timestamp LANGUAGE plpgsql STABLE AS $$
 BEGIN
@@ -124,6 +127,35 @@ CREATE TABLE IF NOT EXISTS doc_pharma.webhook_logs (
     akidha_result    text,                             -- what was sent to Akidha, or why not
     payload          jsonb
 );
+-- Tables made by an earlier version of this file: add any missing columns and
+-- turn UTC (timestamptz) columns into IST, keeping every row.
+ALTER TABLE doc_pharma.orders ADD COLUMN IF NOT EXISTS payment_type text GENERATED ALWAYS AS (
+    CASE WHEN "paymentMode" ~* '(^|[^a-z])(cod|pod)([^a-z]|$)|cash|pay on delivery'
+         THEN 'COD' ELSE 'PREPAID' END) STORED;
+ALTER TABLE doc_pharma.orders ADD COLUMN IF NOT EXISTS stock_status text;
+ALTER TABLE doc_pharma.orders ADD COLUMN IF NOT EXISTS stock_checked_at timestamp(0);
+ALTER TABLE doc_pharma.orders ADD COLUMN IF NOT EXISTS stock_detail jsonb;
+ALTER TABLE doc_pharma.orders ADD COLUMN IF NOT EXISTS current_status text;
+ALTER TABLE doc_pharma.orders ADD COLUMN IF NOT EXISTS current_status_at timestamp(0);
+ALTER TABLE doc_pharma.webhook_logs ADD COLUMN IF NOT EXISTS current_status text;
+
+DO $$
+DECLARE c record;
+BEGIN
+    FOR c IN
+        SELECT table_name, column_name FROM information_schema.columns
+        WHERE table_schema = 'doc_pharma' AND table_name IN ('orders', 'webhook_logs')
+          AND data_type = 'timestamp with time zone'
+    LOOP
+        EXECUTE format('ALTER TABLE doc_pharma.%I ALTER COLUMN %I DROP DEFAULT', c.table_name, c.column_name);
+        EXECUTE format('ALTER TABLE doc_pharma.%I ALTER COLUMN %I TYPE timestamp(0) USING %I AT TIME ZONE ''Asia/Kolkata''',
+                       c.table_name, c.column_name, c.column_name);
+    END LOOP;
+END $$;
+ALTER TABLE doc_pharma.orders ALTER COLUMN queued_at SET DEFAULT doc_pharma.ist_now();
+ALTER TABLE doc_pharma.orders ALTER COLUMN updated_at SET DEFAULT doc_pharma.ist_now();
+ALTER TABLE doc_pharma.webhook_logs ALTER COLUMN received_at SET DEFAULT doc_pharma.ist_now();
+
 CREATE INDEX IF NOT EXISTS webhook_logs_order_idx ON doc_pharma.webhook_logs (partner_order_id, received_at DESC);
 
 GRANT ALL ON ALL TABLES IN SCHEMA doc_pharma TO service_role;
@@ -197,6 +229,10 @@ BEGIN
     RETURN NEW;
 END;
 $$;
+
+-- Trigger from the very first version (in public), if it was ever created.
+DROP TRIGGER IF EXISTS trg_sync_docpharma_order ON public."Order_Level_V4";
+DROP FUNCTION IF EXISTS public.sync_docpharma_order();
 
 DROP TRIGGER IF EXISTS trg_doc_pharma_sync_order ON public."Order_Level_V4";
 CREATE TRIGGER trg_doc_pharma_sync_order
