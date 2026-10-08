@@ -144,6 +144,15 @@ delivered) never moves an order back. To change the mapping, edit
 `akidhaTarget` in `supabase/functions/docpharma-webhook/logic.ts` and deploy
 again.
 
+### Manual Akidha update (admin)
+
+The dashboard's **Akidha OMS** column has a dropdown to send the next status
+by hand (same steps as the edge function, one at a time, with a confirm box).
+It needs the Akidha settings in the dashboard's `.env` too: `AKIDHA_ENV` and
+`AKIDHA_BASE_URL_*`, `AKIDHA_EMAIL_*`, `AKIDHA_PASSWORD_*` (same values as the
+edge function secrets). The edge function continues from whatever status was
+set by hand and never moves an order back.
+
 `doc_pharma.orders.current_status` / `current_status_at` hold the latest
 DocPharma status of each order and when it arrived. Every webhook call is also
 stored in `doc_pharma.webhook_logs` with its time (`received_at`), status
