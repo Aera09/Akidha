@@ -1,4 +1,4 @@
-import { env } from "./http.mjs";
+import { env, istNow } from "./http.mjs";
 
 // DocPharma tables live in the doc_pharma schema; SUPER_SHEET_V1 is in public.
 const SCHEMA = "doc_pharma";
@@ -46,7 +46,7 @@ export async function updateOrder(orderId, fields) {
   const res = await fetch(url, {
     method: "PATCH",
     headers: headers({ "content-type": "application/json", prefer: "return=minimal" }),
-    body: JSON.stringify({ ...fields, updated_at: new Date().toISOString() }),
+    body: JSON.stringify({ ...fields, updated_at: istNow() }),
   });
   if (!res.ok) throw new Error(`Supabase write failed (${res.status}): ${await res.text()}`);
 }

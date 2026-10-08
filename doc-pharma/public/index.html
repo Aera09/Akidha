@@ -156,6 +156,9 @@
     const fullName = (o) => join([o.cx_first_name, o.cx_last_name], " ");
     // payment_type is COD or PREPAID, set by Supabase from paymentMode.
     const isCod = (o) => o.payment_type ? o.payment_type === "COD" : /\bcod\b|cash|\bpod\b|pay on delivery/i.test(o.paymentMode || "");
+    // Times in doc_pharma are plain IST ("2026-10-08 17:18:01"); show them as IST.
+    const istTime = (v) => new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(v) ? v : String(v).replace(" ", "T") + "+05:30")
+      .toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" });
     const money = (n) => n == null ? "—" : "₹" + Number(n).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
     function toast(title, text, kind = "") {
@@ -178,7 +181,7 @@
       return el("td", {},
         o.akidha_status ? el("span", { className: `badge ${/RTO/.test(o.akidha_status) ? "warn" : "placed"}`, textContent: label })
           : el("span", { className: "badge", textContent: "Not updated" }),
-        o.akidha_updated_at ? el("div", { className: "muted", textContent: new Date(o.akidha_updated_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) }) : null,
+        o.akidha_updated_at ? el("div", { className: "muted", textContent: istTime(o.akidha_updated_at) }) : null,
         o.akidha_error ? el("div", { className: "err-text", textContent: o.akidha_error }) : null);
     }
 
@@ -197,7 +200,7 @@
           o.dp_order_number ? el("div", { className: "muted", textContent: `Order no. ${o.dp_order_number}` }) : null,
           o.dp_logistic_status && !delivered ? el("div", { className: "muted", textContent: join([o.dp_logistic_status, o.dp_delivery_partner], " · ") }) : null,
           o.dp_status_reason && !delivered ? el("div", { className: "err-text", textContent: o.dp_status_reason }) : null,
-          (o.current_status_at || o.dp_last_event_at) ? el("div", { className: "muted", textContent: "Updated " + new Date(o.current_status_at || o.dp_last_event_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) }) : null,
+          (o.current_status_at || o.dp_last_event_at) ? el("div", { className: "muted", textContent: "Updated " + istTime(o.current_status_at || o.dp_last_event_at) }) : null,
           links.length ? el("div", { className: "links" }, ...links) : null);
       }
       if (o.dp_status === "FAILED") {
@@ -209,7 +212,7 @@
     // Last DocPharma stock check for an order not placed yet.
     function stockNote(o) {
       if (!o.stock_status) return null;
-      const when = o.stock_checked_at ? " · " + new Date(o.stock_checked_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) : "";
+      const when = o.stock_checked_at ? " · " + istTime(o.stock_checked_at) : "";
       if (o.stock_status === "IN_STOCK") return el("div", { className: "muted", textContent: "In stock" + when });
       return el("div", { className: "err-text", textContent: (o.stock_detail?.reason || o.stock_status.replace(/_/g, " ")) + when });
     }

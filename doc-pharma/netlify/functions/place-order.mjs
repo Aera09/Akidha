@@ -1,4 +1,4 @@
-import { checkAuth, json } from "../lib/http.mjs";
+import { checkAuth, istNow, json } from "../lib/http.mjs";
 import { fetchOrder, fetchOrderItems, updateOrder } from "../lib/supabase.mjs";
 import { checkAndRecordStock } from "../lib/stock.mjs";
 import { buildPayload, placeOrder } from "../lib/docpharma.mjs";
@@ -32,7 +32,7 @@ export default async (req) => {
     if (!stock.inStock) return json(409, { error: `Not sent: ${stock.reason}`, stock });
 
     const result = await placeOrder(payload);
-    const now = new Date().toISOString();
+    const now = istNow();
     if (!result.ok) {
       const reason = result.body.error || result.body.message || result.body.raw || `HTTP ${result.httpStatus}`;
       await updateOrder(order.orderID, { dp_status: "FAILED", dp_error: String(reason).slice(0, 500), dp_response: result.body });

@@ -28,3 +28,7 @@ export function checkAuth(req) {
   }
   return null;
 }
+
+// Current time in India as "YYYY-MM-DD HH:MM:SS" (IST). The doc_pharma tables
+// store plain IST timestamps, so every time written to them uses this.
+export const istNow = () => new Date(Date.now() + 330 * 60000).toISOString().slice(0, 19).replace("T", " ");

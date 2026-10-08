@@ -25,6 +25,9 @@ import { akidhaSteps, akidhaTarget, currentStatus, rowUpdate, summarize } from "
 
 const SCHEMA = "doc_pharma";
 
+// Current time in India as "YYYY-MM-DD HH:MM:SS" (IST); the tables store IST.
+const istNow = () => new Date(Date.now() + 330 * 60000).toISOString().slice(0, 19).replace("T", " ");
+
 function env(name: string): string {
   return (Deno.env.get(name) || "").trim();
 }
@@ -65,7 +68,7 @@ async function findOrder(partnerOrderId: string) {
 const patchOrder = (orderID: string, fields: Record<string, unknown>) =>
   db(`orders?orderID=eq.${encodeURIComponent(orderID)}`, {
     method: "PATCH",
-    body: JSON.stringify({ ...fields, updated_at: new Date().toISOString() }),
+    body: JSON.stringify({ ...fields, updated_at: istNow() }),
   });
 
 // ── Akidha OMS (same endpoints as mx-inbound) ───────────────────────────
@@ -135,7 +138,7 @@ async function processEvent(event: any) {
   try {
     if (order) {
       const update = rowUpdate(order, fields);
-      const now = new Date().toISOString();
+      const now = istNow();
       await patchOrder(order.orderID, {
         ...update,
         ...(update.current_status ? { current_status_at: now } : {}),
@@ -152,7 +155,7 @@ async function processEvent(event: any) {
         const { reached, error } = await pushToAkidha(order.ULID, steps);
         akidhaResult = error ?? `sent ${steps.join(" → ")}`;
         await patchOrder(order.orderID, {
-          ...(reached ? { akidha_status: reached, akidha_updated_at: new Date().toISOString() } : {}),
+          ...(reached ? { akidha_status: reached, akidha_updated_at: istNow() } : {}),
           akidha_error: error,
         });
       }

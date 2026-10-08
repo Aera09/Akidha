@@ -2,11 +2,14 @@
 -- Run in the Supabase SQL editor. Safe to run again.
 -- Nothing in public."Order_Level_V4" is changed: the trigger only reads it.
 --
---   doc_pharma.orders        one row per order: order details, what DocPharma
---                            returned and reported, and the status pushed to Akidha
+--   doc_pharma.orders        one row per order: order details, stock check, what
+--                            DocPharma returned and reported, and the Akidha status
 --                            current_status / current_status_at = latest DocPharma status
 --   doc_pharma.webhook_logs  every webhook call from DocPharma with its time
 --                            (status history: order_123 invoiced, shipped, delivered ...)
+--
+-- All times are stored in IST (Asia/Kolkata) as plain timestamps, so Supabase
+-- shows them exactly as Indian time.
 --
 -- >>> Trigger status: change 'READY_FOR_DOCPHARMA' (two places below) to the
 -- >>> Order_Level_V4 status that means "send this order to DocPharma".
@@ -22,10 +25,40 @@ GRANT USAGE ON SCHEMA doc_pharma TO service_role;
 ALTER DEFAULT PRIVILEGES IN SCHEMA doc_pharma GRANT ALL ON TABLES TO service_role;
 ALTER DEFAULT PRIVILEGES IN SCHEMA doc_pharma GRANT ALL ON SEQUENCES TO service_role;
 
+-- Current time in IST.
+CREATE OR REPLACE FUNCTION doc_pharma.ist_now()
+RETURNS timestamp LANGUAGE sql STABLE AS $$
+    SELECT (now() AT TIME ZONE 'Asia/Kolkata')::timestamp(0);
+$$;
+
+-- Text -> IST timestamp. A value with a time zone (e.g. ...Z or +00) is
+-- converted to IST; a value without one is taken as IST already.
+-- Anything unreadable becomes NULL instead of an error.
+CREATE OR REPLACE FUNCTION doc_pharma.safe_timestamp(v text)
+RETURNS timestamp LANGUAGE plpgsql STABLE AS $$
+BEGIN
+    IF v ~ '(Z|[+-]\d{2}(:?\d{2})?)$' THEN
+        RETURN (v::timestamptz AT TIME ZONE 'Asia/Kolkata')::timestamp(0);
+    END IF;
+    RETURN v::timestamp(0);
+EXCEPTION WHEN OTHERS THEN
+    RETURN NULL;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION doc_pharma.safe_numeric(v text)
+RETURNS numeric LANGUAGE plpgsql IMMUTABLE AS $$
+BEGIN
+    RETURN nullif(regexp_replace(v, '[^0-9.\-]', '', 'g'), '')::numeric;
+EXCEPTION WHEN OTHERS THEN
+    RETURN NULL;
+END;
+$$;
+
 CREATE TABLE IF NOT EXISTS doc_pharma.orders (
     "orderID"           text PRIMARY KEY,
     "ULID"              text,
-    "orderDate"         timestamptz,
+    "orderDate"         timestamp(0),    -- IST
     "paymentMode"       text,
     "cxPhone"           text,
     cx_first_name       text,
@@ -40,11 +73,11 @@ CREATE TABLE IF NOT EXISTS doc_pharma.orders (
                             CASE WHEN "paymentMode" ~* '(^|[^a-z])(cod|pod)([^a-z]|$)|cash|pay on delivery'
                                  THEN 'COD' ELSE 'PREPAID' END) STORED,   -- COD or PREPAID (online)
     status              text,            -- current status in Order_Level_V4
-    queued_at           timestamptz NOT NULL DEFAULT now(),
+    queued_at           timestamp(0) NOT NULL DEFAULT doc_pharma.ist_now(),
 
     -- Stock check (dashboard -> DocPharma inventory-availability/v2)
     stock_status        text,            -- IN_STOCK, OUT_OF_STOCK or CHECK_FAILED
-    stock_checked_at    timestamptz,
+    stock_checked_at    timestamp(0),
     stock_detail        jsonb,           -- per SKU: need, available; reason; eta
 
     -- Place order (dashboard -> DocPharma), only when IN_STOCK
@@ -53,11 +86,11 @@ CREATE TABLE IF NOT EXISTS doc_pharma.orders (
     dp_order_number     text,            -- order_number
     dp_error            text,
     dp_response         jsonb,
-    dp_placed_at        timestamptz,
+    dp_placed_at        timestamp(0),
 
     -- Status updates (DocPharma webhook -> edge function)
     current_status      text,            -- latest DocPharma status of this order
-    current_status_at   timestamptz,     -- when that status arrived
+    current_status_at   timestamp(0),    -- when that status arrived
     dp_order_status     text,            -- top-level status, e.g. in-progress, delivered
     dp_suborder_status  text,            -- e.g. invoiced, shipped, reattempt, delivered
     dp_status_code      integer,
@@ -68,19 +101,19 @@ CREATE TABLE IF NOT EXISTS doc_pharma.orders (
     dp_invoice_url      text,
     dp_status_reason    text,
     dp_last_event       jsonb,
-    dp_last_event_at    timestamptz,
+    dp_last_event_at    timestamp(0),
 
     -- Akidha OMS (edge function -> Akidha)
     akidha_status       text,            -- last status Akidha accepted
-    akidha_updated_at   timestamptz,
+    akidha_updated_at   timestamp(0),
     akidha_error        text,
 
-    updated_at          timestamptz NOT NULL DEFAULT now()
+    updated_at          timestamp(0) NOT NULL DEFAULT doc_pharma.ist_now()
 );
 
 CREATE TABLE IF NOT EXISTS doc_pharma.webhook_logs (
     id               bigserial PRIMARY KEY,
-    received_at      timestamptz NOT NULL DEFAULT now(),
+    received_at      timestamp(0) NOT NULL DEFAULT doc_pharma.ist_now(),   -- IST
     partner_order_id text,
     current_status   text,                             -- status in this event
     order_status     text,
@@ -90,41 +123,13 @@ CREATE TABLE IF NOT EXISTS doc_pharma.webhook_logs (
     akidha_result    text,                             -- what was sent to Akidha, or why not
     payload          jsonb
 );
--- Tables created by an earlier run of this file get the new columns too.
-ALTER TABLE doc_pharma.orders ADD COLUMN IF NOT EXISTS current_status text;
-ALTER TABLE doc_pharma.orders ADD COLUMN IF NOT EXISTS current_status_at timestamptz;
-ALTER TABLE doc_pharma.webhook_logs ADD COLUMN IF NOT EXISTS current_status text;
-ALTER TABLE doc_pharma.orders ADD COLUMN IF NOT EXISTS payment_type text GENERATED ALWAYS AS (
-    CASE WHEN "paymentMode" ~* '(^|[^a-z])(cod|pod)([^a-z]|$)|cash|pay on delivery'
-         THEN 'COD' ELSE 'PREPAID' END) STORED;
-ALTER TABLE doc_pharma.orders ADD COLUMN IF NOT EXISTS stock_status text;
-ALTER TABLE doc_pharma.orders ADD COLUMN IF NOT EXISTS stock_checked_at timestamptz;
-ALTER TABLE doc_pharma.orders ADD COLUMN IF NOT EXISTS stock_detail jsonb;
-
 CREATE INDEX IF NOT EXISTS webhook_logs_order_idx ON doc_pharma.webhook_logs (partner_order_id, received_at DESC);
 
 GRANT ALL ON ALL TABLES IN SCHEMA doc_pharma TO service_role;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA doc_pharma TO service_role;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA doc_pharma TO service_role;
 ALTER TABLE doc_pharma.orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE doc_pharma.webhook_logs ENABLE ROW LEVEL SECURITY;
-
-CREATE OR REPLACE FUNCTION doc_pharma.safe_timestamp(v text)
-RETURNS timestamptz LANGUAGE plpgsql STABLE AS $$
-BEGIN
-    RETURN v::timestamptz;
-EXCEPTION WHEN OTHERS THEN
-    RETURN NULL;
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION doc_pharma.safe_numeric(v text)
-RETURNS numeric LANGUAGE plpgsql IMMUTABLE AS $$
-BEGIN
-    RETURN nullif(regexp_replace(v, '[^0-9.\-]', '', 'g'), '')::numeric;
-EXCEPTION WHEN OTHERS THEN
-    RETURN NULL;
-END;
-$$;
 
 CREATE OR REPLACE FUNCTION doc_pharma.sync_order()
 RETURNS trigger
@@ -165,7 +170,7 @@ BEGIN
                 pincode         = EXCLUDED.pincode,
                 "finalAmount"   = EXCLUDED."finalAmount",
                 status          = EXCLUDED.status,
-                updated_at      = now();
+                updated_at      = doc_pharma.ist_now();
         ELSE
             -- Only orders that already reached the trigger status are tracked.
             UPDATE doc_pharma.orders SET
@@ -182,7 +187,7 @@ BEGIN
                 pincode         = NEW."pinCode"::text,
                 "finalAmount"   = doc_pharma.safe_numeric(NEW."finalAmount"::text),
                 status          = NEW.status::text,
-                updated_at      = now()
+                updated_at      = doc_pharma.ist_now()
             WHERE "orderID" = NEW."orderID"::text;
         END IF;
     EXCEPTION WHEN OTHERS THEN
@@ -191,11 +196,6 @@ BEGIN
     RETURN NEW;
 END;
 $$;
-
--- Earlier version kept these in public; remove its trigger and function.
--- (public.docpharma_orders, if it exists, is left as it is.)
-DROP TRIGGER IF EXISTS trg_sync_docpharma_order ON public."Order_Level_V4";
-DROP FUNCTION IF EXISTS public.sync_docpharma_order();
 
 DROP TRIGGER IF EXISTS trg_doc_pharma_sync_order ON public."Order_Level_V4";
 CREATE TRIGGER trg_doc_pharma_sync_order
