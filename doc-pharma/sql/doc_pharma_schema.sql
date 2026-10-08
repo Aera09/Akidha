@@ -36,10 +36,18 @@ CREATE TABLE IF NOT EXISTS doc_pharma.orders (
     state               text,
     pincode             text,
     "finalAmount"       numeric,
+    payment_type        text GENERATED ALWAYS AS (
+                            CASE WHEN "paymentMode" ~* '(^|[^a-z])(cod|pod)([^a-z]|$)|cash|pay on delivery'
+                                 THEN 'COD' ELSE 'PREPAID' END) STORED,   -- COD or PREPAID (online)
     status              text,            -- current status in Order_Level_V4
     queued_at           timestamptz NOT NULL DEFAULT now(),
 
-    -- Place order (dashboard -> DocPharma)
+    -- Stock check (dashboard -> DocPharma inventory-availability/v2)
+    stock_status        text,            -- IN_STOCK, OUT_OF_STOCK or CHECK_FAILED
+    stock_checked_at    timestamptz,
+    stock_detail        jsonb,           -- per SKU: need, available; reason; eta
+
+    -- Place order (dashboard -> DocPharma), only when IN_STOCK
     dp_status           text,            -- PLACED or FAILED
     dp_fh_order_id      text,            -- data.fh_order_id
     dp_order_number     text,            -- order_number
@@ -86,6 +94,12 @@ CREATE TABLE IF NOT EXISTS doc_pharma.webhook_logs (
 ALTER TABLE doc_pharma.orders ADD COLUMN IF NOT EXISTS current_status text;
 ALTER TABLE doc_pharma.orders ADD COLUMN IF NOT EXISTS current_status_at timestamptz;
 ALTER TABLE doc_pharma.webhook_logs ADD COLUMN IF NOT EXISTS current_status text;
+ALTER TABLE doc_pharma.orders ADD COLUMN IF NOT EXISTS payment_type text GENERATED ALWAYS AS (
+    CASE WHEN "paymentMode" ~* '(^|[^a-z])(cod|pod)([^a-z]|$)|cash|pay on delivery'
+         THEN 'COD' ELSE 'PREPAID' END) STORED;
+ALTER TABLE doc_pharma.orders ADD COLUMN IF NOT EXISTS stock_status text;
+ALTER TABLE doc_pharma.orders ADD COLUMN IF NOT EXISTS stock_checked_at timestamptz;
+ALTER TABLE doc_pharma.orders ADD COLUMN IF NOT EXISTS stock_detail jsonb;
 
 CREATE INDEX IF NOT EXISTS webhook_logs_order_idx ON doc_pharma.webhook_logs (partner_order_id, received_at DESC);
 

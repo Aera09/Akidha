@@ -12,6 +12,9 @@ Order_Level_V4 (status = READY_FOR_DOCPHARMA)
 doc_pharma.orders  (+ SUPER_SHEET_V1 for items)
    │  dashboard: Preview → Place Order
    ▼
+DocPharma inventory-availability/v2 ── every SKU in stock? no → not placed
+   │  yes
+   ▼
 DocPharma place-order ── fh_order_id / order_number saved on the row
    │  webhook (shipped, out for delivery, delivered, RTO …)
    ▼
@@ -80,7 +83,7 @@ it works even while the dashboard runs on localhost.
 | `customer_name`, `patient_name` | `cx_first_name` + `cx_last_name` |
 | `mobile_no` | last 10 digits of `cxPhone` |
 | `address_1`, `address_2`, `city`, `state`, `zipcode` | address columns, `pincode` |
-| `payment_mode_order` | `COD` for COD/POD/cash, otherwise `Prepaid` |
+| `payment_mode_order` | `payment_type`: `COD` for COD/POD/cash, otherwise `Prepaid` |
 | `payment_status` | `1` for COD, `10` for Prepaid |
 | `amount`, `collectible` | `finalAmount` (collectible is 0 for Prepaid) |
 | `order_details[]` | `SUPER_SHEET_V1`: `skuCode`, `medicineName`, `itemQty`, `itemMRP`; `discount_amount` = (MRP − `itemDiscountedPrice`) × qty |
@@ -92,6 +95,24 @@ it works even while the dashboard runs on localhost.
 Preview shows the exact JSON before anything is sent. An order is not sent if
 the name, 10-digit mobile, 6-digit pincode, address or items are missing, and
 an order already placed cannot be placed again.
+
+Prepaid and COD orders go to the same endpoint (`/v2/place-order/`); only the
+body differs (`payment_mode_order`, `payment_status` 10 or 1, `collectible`).
+`doc_pharma.orders.payment_type` (`COD` or `PREPAID`) is worked out by
+Supabase from `paymentMode` and updates with it. An empty `paymentMode` counts
+as `PREPAID`.
+
+### Stock check
+
+Before placing, the dashboard asks DocPharma
+(`POST /inventory-availability/v2` with the pincode, `service_type` = order
+type and every SKU with its quantity) whether each SKU is available in the
+needed quantity. The order is placed only when every SKU is; a SKU DocPharma
+doesn't return counts as not available. Preview shows the result per SKU, and
+Place Order stays disabled until it is all in stock. Place Order checks again
+just before sending. The result is saved on the order: `stock_status`
+(`IN_STOCK`, `OUT_OF_STOCK`, `CHECK_FAILED`), `stock_checked_at`,
+`stock_detail`.
 
 ## DocPharma status → Akidha OMS
 

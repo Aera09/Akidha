@@ -40,8 +40,8 @@ export async function fetchOrderItems(orderId) {
   return readJson(await fetch(url, { headers: headers({}, "public") }), "read");
 }
 
-// Saves what DocPharma returned for an order.
-export async function recordPlacement(orderId, fields) {
+// Saves stock-check and place-order results on an order.
+export async function updateOrder(orderId, fields) {
   const url = restUrl(`orders?orderID=eq.${encodeURIComponent(orderId)}`);
   const res = await fetch(url, {
     method: "PATCH",

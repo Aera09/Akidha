@@ -1,10 +1,17 @@
 // DocPharma Partner API (see the DocPharma_Partner_API Postman collection).
-//   POST {baseUrl}/v2/place-order/   header x-api-key
+//   POST {baseUrl}/inventory-availability/v2   stock check
+//   POST {baseUrl}/v2/place-order/             place order (Prepaid and COD use
+//                                              the same endpoint; only the body differs)
+//   header x-api-key
 // DOCPHARMA_ENV picks the settings: DEV -> *_DEV, PROD -> *_PROD.
 
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
 export const isCod = (paymentMode) => /\bcod\b|cash|\bpod\b|pay on delivery/i.test(paymentMode || "");
+
+// COD or Prepaid for an order: the payment_type column (filled by Supabase from
+// paymentMode), or paymentMode itself for rows read before that column existed.
+export const orderIsCod = (order) => (order.payment_type ? order.payment_type === "COD" : isCod(order.paymentMode));
 
 function setting(name, fallback) {
   const mode = (process.env.DOCPHARMA_ENV || "").trim().toUpperCase();
@@ -34,7 +41,7 @@ const mobile10 = (phone) => String(phone ?? "").replace(/\D/g, "").slice(-10);
 export function buildPayload(order, items) {
   const id = String(order.orderID).trim();
   const name = [order.cx_first_name, order.cx_last_name].map((p) => String(p ?? "").trim()).filter(Boolean).join(" ");
-  const cod = isCod(order.paymentMode);
+  const cod = orderIsCod(order);
 
   const orderDetails = items.map((i) => {
     const qty = Number(i.itemQty) || 0;
@@ -96,9 +103,9 @@ export function buildPayload(order, items) {
   return { payload, problems };
 }
 
-export async function placeOrder(payload) {
+async function call(path, payload) {
   const base = setting("DOCPHARMA_BASE_URL").replace(/\/$/, "");
-  const res = await fetch(`${base}/v2/place-order/`, {
+  const res = await fetch(`${base}${path}`, {
     method: "POST",
     headers: { "content-type": "application/json", "x-api-key": setting("DOCPHARMA_API_KEY") },
     body: JSON.stringify(payload),
@@ -112,4 +119,45 @@ export async function placeOrder(payload) {
   }
   const ok = res.ok && /success/i.test(body.status || "");
   return { ok, httpStatus: res.status, body };
+}
+
+export const placeOrder = (payload) => call("/v2/place-order/", payload);
+
+// Asks DocPharma whether every SKU of the order is in stock, in the needed
+// quantity, for the order's pincode. Returns
+//   { inStock, stock_status: IN_STOCK | OUT_OF_STOCK | CHECK_FAILED, reason, lines, eta }
+// The order is placed only when inStock is true.
+export async function checkStock(payload) {
+  const need = new Map();
+  for (const i of payload.order_details) need.set(i.partner_sku_code, (need.get(i.partner_sku_code) || 0) + i.sku_qty);
+  if (!need.size) return { inStock: false, stock_status: "CHECK_FAILED", reason: "no items to check", lines: [] };
+
+  const result = await call("/inventory-availability/v2", {
+    zipcode: payload.zipcode,
+    service_type: payload.order_type,
+    address: [payload.address_1, payload.address_2, payload.city, payload.state].filter(Boolean).join(", "),
+    items: [...need].map(([partner_sku_code, sku_qty]) => ({ partner_sku_code, sku_qty })),
+  });
+  if (!result.ok) {
+    const reason = result.body.error || result.body.message || result.body.raw || `HTTP ${result.httpStatus}`;
+    return { inStock: false, stock_status: "CHECK_FAILED", reason: `Stock check failed (${result.httpStatus}): ${reason}`, lines: [], response: result.body };
+  }
+
+  const found = Array.isArray(result.body.data?.items) ? result.body.data.items : [];
+  const lines = [...need].map(([sku, qty]) => {
+    const item = found.find((i) => String(i.partner_sku_code) === sku);
+    const available = item && item.quantity != null && !isNaN(Number(item.quantity)) ? Number(item.quantity) : null;
+    const name = payload.order_details.find((i) => i.partner_sku_code === sku)?.sku_name ?? null;
+    return { sku, name, need: qty, available, ok: available !== null && available >= qty };
+  });
+  const short = lines.filter((l) => !l.ok);
+  return {
+    inStock: short.length === 0,
+    stock_status: short.length ? "OUT_OF_STOCK" : "IN_STOCK",
+    reason: short.length
+      ? "Not in stock: " + short.map((l) => `${l.name || l.sku} (need ${l.need}, available ${l.available ?? 0})`).join("; ")
+      : null,
+    lines,
+    eta: result.body.data?.eta_time ?? null,
+  };
 }

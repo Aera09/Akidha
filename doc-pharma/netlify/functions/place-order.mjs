@@ -1,5 +1,6 @@
 import { checkAuth, json } from "../lib/http.mjs";
-import { fetchOrder, fetchOrderItems, recordPlacement } from "../lib/supabase.mjs";
+import { fetchOrder, fetchOrderItems, updateOrder } from "../lib/supabase.mjs";
+import { checkAndRecordStock } from "../lib/stock.mjs";
 import { buildPayload, placeOrder } from "../lib/docpharma.mjs";
 
 export default async (req) => {
@@ -26,11 +27,15 @@ export default async (req) => {
     const { payload, problems } = buildPayload(order, await fetchOrderItems(order.orderID));
     if (problems.length) return json(422, { error: `Not sent: ${problems.join("; ")}`, payload });
 
+    // Place only when DocPharma has every item in stock for this pincode.
+    const stock = await checkAndRecordStock(order.orderID, payload);
+    if (!stock.inStock) return json(409, { error: `Not sent: ${stock.reason}`, stock });
+
     const result = await placeOrder(payload);
     const now = new Date().toISOString();
     if (!result.ok) {
       const reason = result.body.error || result.body.message || result.body.raw || `HTTP ${result.httpStatus}`;
-      await recordPlacement(order.orderID, { dp_status: "FAILED", dp_error: String(reason).slice(0, 500), dp_response: result.body });
+      await updateOrder(order.orderID, { dp_status: "FAILED", dp_error: String(reason).slice(0, 500), dp_response: result.body });
       return json(502, { error: `DocPharma rejected the order (${result.httpStatus}): ${reason}`, docpharma: result.body });
     }
 
@@ -42,7 +47,7 @@ export default async (req) => {
       dp_response: result.body,
       dp_placed_at: now,
     };
-    await recordPlacement(order.orderID, fields);
+    await updateOrder(order.orderID, fields);
     return json(200, { ok: true, orderID, ...fields });
   } catch (err) {
     console.error(err);

@@ -69,6 +69,11 @@
     .dlg-body input[type=password] { width: 100%; height: 40px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface-2); }
     .dlg-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 20px; border-top: 1px solid var(--line); background: var(--surface-2); }
     pre { margin: 0; max-height: 55vh; overflow: auto; padding: 12px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--line); font-size: 12px; }
+    table.stock { display: table; } .stock thead { display: table-header-group; } .stock tbody { display: table-row-group; } .stock tr { display: table-row; padding: 0; }
+    .stock { width: 100%; margin: 0 0 12px; border: 1px solid var(--line); border-radius: 10px; font-size: 13px; }
+    .stock th, .stock td { padding: 6px 10px; display: table-cell; }
+    .stock .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .stock-ok { margin: 0 0 10px; padding: 10px 12px; border-radius: 10px; background: color-mix(in srgb, var(--ok) 12%, transparent); color: var(--ok); font-size: 13px; }
     .problems { margin: 0 0 10px; padding: 10px 12px; border-radius: 10px; background: var(--err-bg); color: var(--err); font-size: 13px; }
     @media (max-width: 860px) {
       .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -113,7 +118,7 @@
   </form></dialog>
 
   <dialog id="preview"><form method="dialog">
-    <div class="dlg-body"><h2 id="preview-title"></h2><div id="preview-problems"></div><pre id="preview-json"></pre></div>
+    <div class="dlg-body"><h2 id="preview-title"></h2><div id="preview-problems"></div><div id="preview-stock"></div><pre id="preview-json"></pre></div>
     <div class="dlg-actions"><button class="btn" value="close">Close</button><button class="btn btn-primary" value="place" id="preview-place">Place Order</button></div>
   </form></dialog>
 
@@ -149,7 +154,8 @@
     }
     const join = (parts, sep) => parts.map((p) => String(p ?? "").trim()).filter(Boolean).join(sep);
     const fullName = (o) => join([o.cx_first_name, o.cx_last_name], " ");
-    const isCod = (p) => /\bcod\b|cash|\bpod\b|pay on delivery/i.test(p || "");
+    // payment_type is COD or PREPAID, set by Supabase from paymentMode.
+    const isCod = (o) => o.payment_type ? o.payment_type === "COD" : /\bcod\b|cash|\bpod\b|pay on delivery/i.test(o.paymentMode || "");
     const money = (n) => n == null ? "—" : "₹" + Number(n).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
     function toast(title, text, kind = "") {
@@ -195,9 +201,17 @@
           links.length ? el("div", { className: "links" }, ...links) : null);
       }
       if (o.dp_status === "FAILED") {
-        return el("td", {}, el("span", { className: "badge failed", textContent: "Failed" }), el("div", { className: "err-text", textContent: o.dp_error || "" }));
+        return el("td", {}, el("span", { className: "badge failed", textContent: "Failed" }), el("div", { className: "err-text", textContent: o.dp_error || "" }), stockNote(o));
       }
-      return el("td", {}, el("span", { className: "badge", textContent: "Not placed" }));
+      return el("td", {}, el("span", { className: "badge", textContent: "Not placed" }), stockNote(o));
+    }
+
+    // Last DocPharma stock check for an order not placed yet.
+    function stockNote(o) {
+      if (!o.stock_status) return null;
+      const when = o.stock_checked_at ? " · " + new Date(o.stock_checked_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) : "";
+      if (o.stock_status === "IN_STOCK") return el("div", { className: "muted", textContent: "In stock" + when });
+      return el("div", { className: "err-text", textContent: (o.stock_detail?.reason || o.stock_status.replace(/_/g, " ")) + when });
     }
 
     function render() {
@@ -225,7 +239,9 @@
           el("td", {}, el("div", { className: "mono", textContent: x.orderID }), el("div", { className: "muted", textContent: x.status || "" })),
           el("td", {}, el("div", { textContent: fullName(x) || "—" }), el("div", { className: "muted", textContent: x.cxPhone || "" }),
             el("div", { className: "muted", textContent: join([x.city, x.pincode], " – ") })),
-          el("td", {}, el("div", { textContent: x.paymentMode || "—" }), el("div", { className: "muted", textContent: money(x.finalAmount) + (isCod(x.paymentMode) ? " to collect" : "") })),
+          el("td", {}, el("span", { className: `badge ${isCod(x) ? "warn" : "placed"}`, textContent: isCod(x) ? "COD" : "Prepaid" }),
+            el("div", { className: "muted", textContent: x.paymentMode || "" }),
+            el("div", { className: "muted", textContent: money(x.finalAmount) + (isCod(x) ? " to collect" : "") })),
           dpCell(x),
           akidhaCell(x),
           el("td", {}, el("div", { className: "actions" }, preview, place)));
@@ -254,12 +270,31 @@
       $("preview-problems").replaceChildren(...(data.problems.length
         ? [el("p", { className: "problems", textContent: "Fix before placing: " + data.problems.join("; ") })] : []));
       $("preview-json").textContent = JSON.stringify(data.payload, null, 2);
+      $("preview-stock").replaceChildren(...stockView(data.stock));
       const placeBtn = $("preview-place");
-      placeBtn.disabled = order.dp_status === "PLACED" || data.problems.length > 0;
+      placeBtn.disabled = order.dp_status === "PLACED" || data.problems.length > 0 || !data.stock?.inStock;
       const dlg = $("preview");
       dlg.returnValue = "close";
       dlg.onclose = () => { if (dlg.returnValue === "place") place(order); };
       dlg.showModal();
+    }
+
+    // DocPharma stock per SKU; Place Order stays off unless everything is in stock.
+    function stockView(stock) {
+      if (!stock) return [];
+      const out = [stock.inStock
+        ? el("p", { className: "stock-ok", textContent: "All items in stock at DocPharma" + (stock.eta ? ` · ETA ${stock.eta}` : "") })
+        : el("p", { className: "problems", textContent: stock.reason || "Not in stock" })];
+      if (stock.lines?.length) {
+        out.push(el("table", { className: "stock" },
+          el("thead", {}, el("tr", {}, el("th", { textContent: "SKU" }), el("th", { textContent: "Item" }),
+            el("th", { className: "num", textContent: "Need" }), el("th", { className: "num", textContent: "Available" }))),
+          el("tbody", {}, ...stock.lines.map((l) => el("tr", {},
+            el("td", { className: "mono", textContent: l.sku }), el("td", { textContent: l.name || "" }),
+            el("td", { className: "num", textContent: l.need }),
+            el("td", { className: `num ${l.ok ? "" : "err-text"}`, textContent: l.available ?? "not found" }))))));
+      }
+      return out;
     }
 
     async function place(order) {
