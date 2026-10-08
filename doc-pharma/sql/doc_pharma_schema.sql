@@ -11,8 +11,9 @@
 -- All times are stored in IST (Asia/Kolkata) as plain timestamps, so Supabase
 -- shows them exactly as Indian time.
 --
--- >>> Trigger status: change 'READY_FOR_DOCPHARMA' (two places below) to the
--- >>> Order_Level_V4 status that means "send this order to DocPharma".
+-- Trigger: as soon as an Order_Level_V4 row gets status READY_FOR_3PL it is
+-- copied here, and after that it keeps following V4 (status, address, ...),
+-- the same way orders_ready_for_hl_viable follows READY_FOR_HL.
 --
 -- After running: Supabase -> Project Settings -> API -> Exposed schemas,
 -- add doc_pharma (the dashboard and edge function read it through the API).
@@ -140,7 +141,7 @@ AS $$
 BEGIN
     -- Never let a problem here block the write to Order_Level_V4.
     BEGIN
-        IF upper(NEW.status::text) = 'READY_FOR_DOCPHARMA' THEN
+        IF upper(NEW.status::text) = 'READY_FOR_3PL' THEN
             INSERT INTO doc_pharma.orders (
                 "orderID", "ULID", "orderDate", "paymentMode", "cxPhone",
                 cx_first_name, cx_last_name, cx_add_street_1, cx_add_street_2,
@@ -216,5 +217,5 @@ SELECT
     city::text, state::text, "pinCode"::text,
     doc_pharma.safe_numeric("finalAmount"::text), status::text
 FROM public."Order_Level_V4"
-WHERE upper(status::text) = 'READY_FOR_DOCPHARMA'
+WHERE upper(status::text) = 'READY_FOR_3PL'
 ON CONFLICT ("orderID") DO NOTHING;

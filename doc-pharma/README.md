@@ -6,7 +6,7 @@ status updates through a Supabase Edge Function, and pushes the matching
 status to Akidha OMS.
 
 ```
-Order_Level_V4 (status = READY_FOR_DOCPHARMA)
+Order_Level_V4 (status = READY_FOR_3PL)
    │  trigger
    ▼
 doc_pharma.orders  (+ SUPER_SHEET_V1 for items)
@@ -28,9 +28,10 @@ Separate project from the HL/Viable dashboard in the repository root: its own
 
 ## 1. Supabase: schema and table
 
-Open `sql/doc_pharma_schema.sql`, change `'READY_FOR_DOCPHARMA'` (two places)
-to the `Order_Level_V4` status that means "send to DocPharma", and run it in
-the Supabase SQL editor. It creates the `doc_pharma` schema with
+Run `sql/doc_pharma_schema.sql` in the Supabase SQL editor. As soon as an
+`Order_Level_V4` order gets status `READY_FOR_3PL` it is copied into
+`doc_pharma.orders`, and after that it keeps following V4 (status, address,
+amount), like `orders_ready_for_hl_viable` does for `READY_FOR_HL`. It creates the `doc_pharma` schema with
 `doc_pharma.orders` and `doc_pharma.webhook_logs`, and a trigger on
 `Order_Level_V4` that only reads it. It does not change `Order_Level_V4` or
 the HL/Viable table. Running it again is safe.
