@@ -1,0 +1,14 @@
+{
+  "name": "docpharma-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Places Akidha orders from Supabase with the DocPharma Partner API.",
+  "engines": {
+    "node": ">=20.12"
+  },
+  "scripts": {
+    "start": "node server.mjs",
+    "dev": "node --watch server.mjs"
+  }
+}

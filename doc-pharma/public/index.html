@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DocPharma Orders</title>
+  <style>
+    :root {
+      --bg: #f4f5fa; --surface: #fff; --surface-2: #f8f9fc; --text: #111827; --muted: #6b7280; --line: #e6e8ef;
+      --accent: #0f766e; --accent-soft: #e6f4f2; --on-accent: #fff; --ok: #059669; --err: #dc2626; --warn: #b45309;
+      --ok-bg: #d1fae5; --err-bg: #fee2e2; --none-bg: #f1f2f6;
+      --shadow: 0 1px 2px rgba(16,24,40,.05), 0 4px 16px rgba(16,24,40,.06); --radius: 14px;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0c0e14; --surface: #151821; --surface-2: #1b1f2a; --text: #eceef4; --muted: #9199a8; --line: #262b38;
+        --accent: #2dd4bf; --accent-soft: #10302d; --on-accent: #0c0e14; --ok: #34d399; --err: #f87171; --warn: #fcd34d;
+        --ok-bg: #06291f; --err-bg: #3b1111; --none-bg: #222734; --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.25);
+      }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); }
+    button, input { font: inherit; color: inherit; }
+    .topbar { position: sticky; top: 0; z-index: 10; background: var(--surface); border-bottom: 1px solid var(--line); }
+    .topbar-inner { max-width: 1280px; margin: 0 auto; padding: 14px 16px; display: flex; align-items: center; gap: 12px; }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16px; }
+    .brand img { height: 30px; }
+    .brand small { display: block; font-weight: 500; font-size: 12px; color: var(--muted); }
+    .env { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
+    .env.prod { background: var(--err-bg); color: var(--err); }
+    .spacer { flex: 1; }
+    .btn { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); cursor: pointer; font-weight: 500; white-space: nowrap; }
+    .btn:hover { background: var(--surface-2); }
+    .btn:disabled { opacity: .55; cursor: not-allowed; }
+    .btn-primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
+    main { max-width: 1280px; margin: 0 auto; padding: 20px 16px 48px; }
+    .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 20px; }
+    .stat { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow); }
+    .stat-label { color: var(--muted); font-size: 12px; font-weight: 500; text-transform: uppercase; letter-spacing: .04em; }
+    .stat-value { font-size: 28px; font-weight: 700; margin-top: 4px; }
+    .panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
+    .toolbar { display: flex; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+    .toolbar input { flex: 1; max-width: 360px; height: 34px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface-2); outline: none; }
+    table { width: 100%; border-collapse: collapse; }
+    th { text-align: left; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; padding: 10px 16px; background: var(--surface-2); border-bottom: 1px solid var(--line); }
+    td { padding: 12px 16px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    tbody tr:last-child td { border-bottom: 0; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+    .muted { color: var(--muted); font-size: 12px; }
+    .badge { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--none-bg); color: var(--muted); }
+    .badge.placed { background: var(--ok-bg); color: var(--ok); }
+    .badge.failed { background: var(--err-bg); color: var(--err); }
+    .err-text { color: var(--err); font-size: 12px; max-width: 280px; }
+    .actions { display: flex; gap: 8px; justify-content: flex-end; }
+    .empty { padding: 48px 16px; text-align: center; color: var(--muted); }
+    .empty strong { display: block; color: var(--text); }
+    .load-error strong { color: var(--err); }
+    .toasts { position: fixed; right: 16px; bottom: 16px; display: grid; gap: 8px; z-index: 50; max-width: min(400px, calc(100vw - 32px)); }
+    .toast { padding: 12px 14px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--accent); box-shadow: var(--shadow); }
+    .toast.ok { border-left-color: var(--ok); } .toast.err { border-left-color: var(--err); }
+    .toast strong { display: block; } .toast span { color: var(--muted); font-size: 13px; word-break: break-word; }
+    dialog { border: 1px solid var(--line); border-radius: 16px; padding: 0; width: min(640px, calc(100vw - 32px)); background: var(--surface); color: var(--text); }
+    dialog::backdrop { background: rgba(15,17,25,.45); }
+    .dlg-body { padding: 20px; }
+    .dlg-body h2 { margin: 0 0 8px; font-size: 17px; }
+    .dlg-body input[type=password] { width: 100%; height: 40px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface-2); }
+    .dlg-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 20px; border-top: 1px solid var(--line); background: var(--surface-2); }
+    pre { margin: 0; max-height: 55vh; overflow: auto; padding: 12px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--line); font-size: 12px; }
+    .problems { margin: 0 0 10px; padding: 10px 12px; border-radius: 10px; background: var(--err-bg); color: var(--err); font-size: 13px; }
+    @media (max-width: 860px) {
+      .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      thead { display: none; }
+      table, tbody, tr, td { display: block; width: 100%; }
+      tbody tr { padding: 12px 16px; border-bottom: 1px solid var(--line); }
+      td { border: 0; padding: 3px 0; }
+      .actions { justify-content: flex-start; margin-top: 6px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="topbar"><div class="topbar-inner">
+    <div class="brand"><img src="akidha-logo.png" alt="Akidha"><div>DocPharma Orders<small>Supabase → DocPharma Partner API</small></div></div>
+    <span class="env" id="env"></span>
+    <div class="spacer"></div>
+    <button class="btn" id="refresh">Refresh</button>
+  </div></div>
+
+  <main>
+    <section class="stats">
+      <div class="stat"><div class="stat-label">In queue</div><div class="stat-value" id="st-total">–</div></div>
+      <div class="stat"><div class="stat-label">Not placed</div><div class="stat-value" id="st-new">–</div></div>
+      <div class="stat"><div class="stat-label">Placed</div><div class="stat-value" id="st-placed">–</div></div>
+      <div class="stat"><div class="stat-label">Failed</div><div class="stat-value" id="st-failed">–</div></div>
+    </section>
+    <section class="panel">
+      <div class="toolbar"><input id="q" type="search" placeholder="Search order ID, name, phone, pincode…" autocomplete="off"></div>
+      <table>
+        <thead><tr><th>Order</th><th>Customer</th><th>Payment</th><th>DocPharma</th><th style="text-align:right">Actions</th></tr></thead>
+        <tbody id="rows"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
+      </table>
+    </section>
+  </main>
+
+  <div class="toasts" id="toasts"></div>
+
+  <dialog id="login"><form method="dialog">
+    <div class="dlg-body"><h2>Dashboard locked</h2><p class="muted">Enter the dashboard password.</p>
+      <input type="password" id="login-pw" required autocomplete="current-password"><p class="err-text" id="login-err"></p></div>
+    <div class="dlg-actions"><button class="btn btn-primary">Unlock</button></div>
+  </form></dialog>
+
+  <dialog id="preview"><form method="dialog">
+    <div class="dlg-body"><h2 id="preview-title"></h2><div id="preview-problems"></div><pre id="preview-json"></pre></div>
+    <div class="dlg-actions"><button class="btn" value="close">Close</button><button class="btn btn-primary" value="place" id="preview-place">Place Order</button></div>
+  </form></dialog>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const state = { orders: [], q: "", key: null };
+    try { state.key = sessionStorage.getItem("dpKey"); } catch {}
+
+    async function api(path, options = {}) {
+      if (!state.key) await askPassword();
+      const res = await fetch(path, { ...options, headers: { "content-type": "application/json", "x-dashboard-key": state.key } });
+      if (res.status === 401) { await askPassword("Wrong password, try again."); return api(path, options); }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw Object.assign(new Error(data.error || `Request failed (${res.status})`), { data });
+      return data;
+    }
+
+    function askPassword(error = "") {
+      return new Promise((resolve) => {
+        const dlg = $("login");
+        $("login-err").textContent = error;
+        $("login-pw").value = "";
+        dlg.onclose = () => { state.key = $("login-pw").value; try { sessionStorage.setItem("dpKey", state.key); } catch {} resolve(); };
+        dlg.oncancel = (e) => e.preventDefault();
+        if (!dlg.open) dlg.showModal();
+      });
+    }
+
+    function el(tag, props = {}, ...children) {
+      const node = Object.assign(document.createElement(tag), props);
+      node.append(...children.filter((c) => c !== null && c !== undefined));
+      return node;
+    }
+    const join = (parts, sep) => parts.map((p) => String(p ?? "").trim()).filter(Boolean).join(sep);
+    const fullName = (o) => join([o.cx_first_name, o.cx_last_name], " ");
+    const isCod = (p) => /\bcod\b|cash|\bpod\b|pay on delivery/i.test(p || "");
+    const money = (n) => n == null ? "—" : "₹" + Number(n).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    function toast(title, text, kind = "") {
+      const t = el("div", { className: `toast ${kind}` }, el("strong", { textContent: title }), el("span", { textContent: text || "" }));
+      $("toasts").append(t);
+      setTimeout(() => t.remove(), kind === "err" ? 9000 : 4000);
+    }
+
+    function dpCell(o) {
+      if (o.dp_status === "PLACED") {
+        return el("td", {}, el("span", { className: "badge placed", textContent: "Placed" }),
+          el("div", { className: "mono", textContent: o.dp_fh_order_id || "" }),
+          o.dp_order_number ? el("div", { className: "muted", textContent: `Order no. ${o.dp_order_number}` }) : null);
+      }
+      if (o.dp_status === "FAILED") {
+        return el("td", {}, el("span", { className: "badge failed", textContent: "Failed" }), el("div", { className: "err-text", textContent: o.dp_error || "" }));
+      }
+      return el("td", {}, el("span", { className: "badge", textContent: "Not placed" }));
+    }
+
+    function render() {
+      const o = state.orders;
+      $("st-total").textContent = o.length;
+      $("st-new").textContent = o.filter((x) => !x.dp_status).length;
+      $("st-placed").textContent = o.filter((x) => x.dp_status === "PLACED").length;
+      $("st-failed").textContent = o.filter((x) => x.dp_status === "FAILED").length;
+
+      const q = state.q.trim().toLowerCase();
+      const rows = o.filter((x) => !q || [x.orderID, fullName(x), x.cxPhone, x.pincode, x.city].some((v) => String(v ?? "").toLowerCase().includes(q)));
+      if (!rows.length) {
+        $("rows").replaceChildren(el("tr", {}, el("td", { colSpan: 5, className: "empty" },
+          el("strong", { textContent: o.length ? "No matching orders" : "No orders in docpharma_orders yet" }))));
+        return;
+      }
+      $("rows").replaceChildren(...rows.map((x) => {
+        const preview = el("button", { className: "btn", type: "button", textContent: "Preview" });
+        preview.onclick = () => showPreview(x);
+        const place = el("button", { className: "btn btn-primary", type: "button", textContent: x.dp_status === "FAILED" ? "Retry" : "Place Order" });
+        place.disabled = x.dp_status === "PLACED";
+        place.onclick = () => showPreview(x);
+        return el("tr", {},
+          el("td", {}, el("div", { className: "mono", textContent: x.orderID }), el("div", { className: "muted", textContent: x.status || "" })),
+          el("td", {}, el("div", { textContent: fullName(x) || "—" }), el("div", { className: "muted", textContent: x.cxPhone || "" }),
+            el("div", { className: "muted", textContent: join([x.city, x.pincode], " – ") })),
+          el("td", {}, el("div", { textContent: x.paymentMode || "—" }), el("div", { className: "muted", textContent: money(x.finalAmount) + (isCod(x.paymentMode) ? " to collect" : "") })),
+          dpCell(x),
+          el("td", {}, el("div", { className: "actions" }, preview, place)));
+      }));
+    }
+
+    async function load() {
+      try {
+        const data = await api("/api/orders");
+        state.orders = data.orders;
+        $("env").textContent = data.env;
+        $("env").className = "env" + (data.env === "PROD" ? " prod" : "");
+        render();
+      } catch (err) {
+        $("rows").replaceChildren(el("tr", {}, el("td", { colSpan: 5, className: "empty load-error" },
+          el("strong", { textContent: "Couldn't load orders" }), el("div", { className: "mono", textContent: err.message }))));
+      }
+    }
+
+    // Shows the exact JSON DocPharma will receive; Place Order sends it.
+    async function showPreview(order) {
+      let data;
+      try { data = await api(`/api/payload?orderID=${encodeURIComponent(order.orderID)}`); }
+      catch (err) { toast(`Order ${order.orderID}`, err.message, "err"); return; }
+      $("preview-title").textContent = `Order ${order.orderID} → DocPharma (${$("env").textContent})`;
+      $("preview-problems").replaceChildren(...(data.problems.length
+        ? [el("p", { className: "problems", textContent: "Fix before placing: " + data.problems.join("; ") })] : []));
+      $("preview-json").textContent = JSON.stringify(data.payload, null, 2);
+      const placeBtn = $("preview-place");
+      placeBtn.disabled = order.dp_status === "PLACED" || data.problems.length > 0;
+      const dlg = $("preview");
+      dlg.returnValue = "close";
+      dlg.onclose = () => { if (dlg.returnValue === "place") place(order); };
+      dlg.showModal();
+    }
+
+    async function place(order) {
+      toast(`Placing ${order.orderID}…`, "Sending to DocPharma");
+      try {
+        const r = await api("/api/place-order", { method: "POST", body: JSON.stringify({ orderID: order.orderID }) });
+        toast("Order placed", `${order.orderID} → ${r.dp_fh_order_id || "placed"}`, "ok");
+      } catch (err) {
+        toast(`Order ${order.orderID} not placed`, err.message, "err");
+      }
+      load();
+    }
+
+    $("refresh").onclick = load;
+    $("q").oninput = (e) => { state.q = e.target.value; render(); };
+    load();
+  </script>
+</body>
+</html>
