@@ -4,8 +4,8 @@
 //
 // DocPharma posts order updates here (invoiced, shipped, reattempt,
 // delivered, ...). We answer straight away, then in the background:
-//   1. log the call in doc_pharma.webhook_logs
-//   2. update the order in doc_pharma.orders
+//   1. update the order in doc_pharma.orders (current_status, current_status_at, ...)
+//   2. add a row to doc_pharma.webhook_logs (every event, with its time)
 //   3. if the new status means something for Akidha, update the order in
 //      Akidha OMS (by ULID), one status step at a time
 //
@@ -21,7 +21,7 @@
 // SUPABASE_URL and the service role key are provided by Supabase.
 // ═══════════════════════════════════════════════════════════════════════════
 
-import { akidhaSteps, akidhaTarget, rowUpdate, summarize } from "./logic.ts";
+import { akidhaSteps, akidhaTarget, currentStatus, rowUpdate, summarize } from "./logic.ts";
 
 const SCHEMA = "doc_pharma";
 
@@ -135,7 +135,13 @@ async function processEvent(event: any) {
   try {
     if (order) {
       const update = rowUpdate(order, fields);
-      await patchOrder(order.orderID, { ...update, dp_last_event: event, dp_last_event_at: new Date().toISOString() });
+      const now = new Date().toISOString();
+      await patchOrder(order.orderID, {
+        ...update,
+        ...(update.current_status ? { current_status_at: now } : {}),
+        dp_last_event: event,
+        dp_last_event_at: now,
+      });
 
       // Use the order's status after this event to decide what Akidha needs.
       const steps = akidhaSteps(order.akidha_status, akidhaTarget({ ...order, ...update }));
@@ -161,6 +167,7 @@ async function processEvent(event: any) {
     method: "POST",
     body: JSON.stringify({
       partner_order_id: partnerOrderId,
+      current_status: currentStatus(fields),
       order_status: fields.dp_order_status,
       suborder_status: fields.dp_suborder_status,
       status_code: fields.dp_status_code,

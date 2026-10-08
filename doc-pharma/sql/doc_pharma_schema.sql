@@ -4,7 +4,9 @@
 --
 --   doc_pharma.orders        one row per order: order details, what DocPharma
 --                            returned and reported, and the status pushed to Akidha
---   doc_pharma.webhook_logs  every webhook call from DocPharma, as received
+--                            current_status / current_status_at = latest DocPharma status
+--   doc_pharma.webhook_logs  every webhook call from DocPharma with its time
+--                            (status history: order_123 invoiced, shipped, delivered ...)
 --
 -- >>> Trigger status: change 'READY_FOR_DOCPHARMA' (two places below) to the
 -- >>> Order_Level_V4 status that means "send this order to DocPharma".
@@ -46,6 +48,8 @@ CREATE TABLE IF NOT EXISTS doc_pharma.orders (
     dp_placed_at        timestamptz,
 
     -- Status updates (DocPharma webhook -> edge function)
+    current_status      text,            -- latest DocPharma status of this order
+    current_status_at   timestamptz,     -- when that status arrived
     dp_order_status     text,            -- top-level status, e.g. in-progress, delivered
     dp_suborder_status  text,            -- e.g. invoiced, shipped, reattempt, delivered
     dp_status_code      integer,
@@ -70,6 +74,7 @@ CREATE TABLE IF NOT EXISTS doc_pharma.webhook_logs (
     id               bigserial PRIMARY KEY,
     received_at      timestamptz NOT NULL DEFAULT now(),
     partner_order_id text,
+    current_status   text,                             -- status in this event
     order_status     text,
     suborder_status  text,
     status_code      integer,
@@ -77,6 +82,11 @@ CREATE TABLE IF NOT EXISTS doc_pharma.webhook_logs (
     akidha_result    text,                             -- what was sent to Akidha, or why not
     payload          jsonb
 );
+-- Tables created by an earlier run of this file get the new columns too.
+ALTER TABLE doc_pharma.orders ADD COLUMN IF NOT EXISTS current_status text;
+ALTER TABLE doc_pharma.orders ADD COLUMN IF NOT EXISTS current_status_at timestamptz;
+ALTER TABLE doc_pharma.webhook_logs ADD COLUMN IF NOT EXISTS current_status text;
+
 CREATE INDEX IF NOT EXISTS webhook_logs_order_idx ON doc_pharma.webhook_logs (partner_order_id, received_at DESC);
 
 GRANT ALL ON ALL TABLES IN SCHEMA doc_pharma TO service_role;

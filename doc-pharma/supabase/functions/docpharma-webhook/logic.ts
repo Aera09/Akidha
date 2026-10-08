@@ -50,13 +50,20 @@ const FINAL = /^(delivered|cancel+ed|rto[-_ ]?delivered|returned)$/i;
 export const isFinal = (f: Partial<Fields>) =>
   FINAL.test(f.dp_suborder_status || "") || FINAL.test(f.dp_order_status || "");
 
+// The one status shown for the order: the suborder status (invoiced, shipped,
+// reattempt, delivered, ...), else the courier status, else the order status.
+export const currentStatus = (f: Partial<Fields>): string | null =>
+  f.dp_suborder_status || f.dp_logistic_status || f.dp_order_status || null;
+
 // The columns to write for this event, given what the row already has.
 export function rowUpdate(current: Partial<Fields>, fields: Fields): Record<string, unknown> {
-  let update = Object.fromEntries(
+  let update: Record<string, unknown> = Object.fromEntries(
     Object.entries(fields).filter(([k, v]) => v !== null || !STICKY.includes(k)),
   );
   if (isFinal(current) && !isFinal(fields)) {
     update = Object.fromEntries(Object.entries(update).filter(([k]) => STICKY.includes(k)));
+  } else if (currentStatus(fields)) {
+    update.current_status = currentStatus(fields);
   }
   return update;
 }

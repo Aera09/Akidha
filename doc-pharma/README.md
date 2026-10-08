@@ -112,6 +112,17 @@ delivered) never moves an order back. To change the mapping, edit
 `akidhaTarget` in `supabase/functions/docpharma-webhook/logic.ts` and deploy
 again.
 
-Every webhook call is stored in `doc_pharma.webhook_logs` with what was sent
-to Akidha (`akidha_result`). The dashboard shows the DocPharma status, courier,
+`doc_pharma.orders.current_status` / `current_status_at` hold the latest
+DocPharma status of each order and when it arrived. Every webhook call is also
+stored in `doc_pharma.webhook_logs` with its time (`received_at`), status
+(`current_status`) and what was sent to Akidha (`akidha_result`), so the full
+history of an order is:
+
+```sql
+select received_at, current_status, akidha_result
+from doc_pharma.webhook_logs
+where partner_order_id = 'OR_123'
+order by received_at;
+```
+ The dashboard shows the DocPharma status, courier,
 Track / Invoice links, and the Akidha status or error.
