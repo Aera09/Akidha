@@ -22,7 +22,7 @@
     body { margin: 0; font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); }
     button, input { font: inherit; color: inherit; }
     .topbar { position: sticky; top: 0; z-index: 10; background: var(--surface); border-bottom: 1px solid var(--line); }
-    .topbar-inner { max-width: 1280px; margin: 0 auto; padding: 14px 16px; display: flex; align-items: center; gap: 12px; }
+    .topbar-inner { max-width: 1280px; margin: 0 auto; padding: 14px 16px; display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; }
     .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16px; }
     .brand img { height: 30px; }
     .brand small { display: block; font-weight: 500; font-size: 12px; color: var(--muted); }
@@ -51,6 +51,10 @@
     .badge.placed { background: var(--ok-bg); color: var(--ok); }
     .badge.failed { background: var(--err-bg); color: var(--err); }
     .badge.warn { background: var(--warn-bg); color: var(--warn); }
+    .akidha-edit { display: flex; gap: 6px; margin-top: 8px; }
+    .akidha-edit select { height: 32px; min-width: 0; flex: 1; max-width: 190px; padding: 0 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--text); font: inherit; font-size: 13px; }
+    .akidha-edit .btn { height: 32px; padding: 0 12px; }
+    .change { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
     .links { display: flex; gap: 10px; font-size: 12px; margin-top: 2px; }
     .links a { color: var(--accent); }
     .err-text { color: var(--err); font-size: 12px; max-width: 280px; }
@@ -76,6 +80,7 @@
     .stock-ok { margin: 0 0 10px; padding: 10px 12px; border-radius: 10px; background: color-mix(in srgb, var(--ok) 12%, transparent); color: var(--ok); font-size: 13px; }
     .problems { margin: 0 0 10px; padding: 10px 12px; border-radius: 10px; background: var(--err-bg); color: var(--err); font-size: 13px; }
     @media (max-width: 860px) {
+      .brand small { display: none; }
       .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       thead { display: none; }
       table, tbody, tr, td { display: block; width: 100%; }
@@ -88,7 +93,8 @@
 <body>
   <div class="topbar"><div class="topbar-inner">
     <div class="brand"><img src="akidha-logo.png" alt="Akidha"><div>DocPharma Orders<small>Supabase → DocPharma Partner API</small></div></div>
-    <span class="env" id="env"></span>
+    <span class="env" id="env" title="DocPharma"></span>
+    <span class="env" id="akidha-env" title="Akidha OMS"></span>
     <div class="spacer"></div>
     <button class="btn" id="refresh">Refresh</button>
   </div></div>
@@ -117,6 +123,11 @@
     <div class="dlg-actions"><button class="btn btn-primary">Unlock</button></div>
   </form></dialog>
 
+  <dialog id="confirm"><form method="dialog">
+    <div class="dlg-body"><h2>Send status to Akidha?</h2><p id="confirm-text"></p><div class="change" id="confirm-change"></div></div>
+    <div class="dlg-actions"><button class="btn" value="cancel">Cancel</button><button class="btn btn-primary" value="ok">Send to Akidha</button></div>
+  </form></dialog>
+
   <dialog id="preview"><form method="dialog">
     <div class="dlg-body"><h2 id="preview-title"></h2><div id="preview-problems"></div><div id="preview-stock"></div><pre id="preview-json"></pre></div>
     <div class="dlg-actions"><button class="btn" value="close">Close</button><button class="btn btn-primary" value="place" id="preview-place">Place Order</button></div>
@@ -124,7 +135,7 @@
 
   <script>
     const $ = (id) => document.getElementById(id);
-    const state = { orders: [], q: "", key: null };
+    const state = { orders: [], q: "", key: null, statuses: [], next: {} };
     try { state.key = sessionStorage.getItem("dpKey"); } catch {}
 
     async function api(path, options = {}) {
@@ -174,15 +185,54 @@
       return "placed";
     }
 
-    // What the edge function last pushed to Akidha OMS for this order.
+    const AKIDHA_LABEL = { SHIPMENT_PICKED_UP: "Picked up", OUT_FOR_DELIVERY: "Out for delivery", COMPLETED: "Delivered",
+      RTO_INITIATED: "RTO initiated", RTO_DELIVERED: "RTO delivered" };
+    const akidhaLabel = (s) => AKIDHA_LABEL[s] || s || "Not updated";
+    const akidhaBadge = (s) => el("span", { className: `badge ${!s ? "" : /RTO/.test(s) ? "warn" : "placed"}`, textContent: akidhaLabel(s) });
+
+    // Akidha OMS status: set by the edge function from DocPharma webhooks, or
+    // by hand here (next step only).
     function akidhaCell(o) {
-      const label = { SHIPMENT_PICKED_UP: "Picked up", OUT_FOR_DELIVERY: "Out for delivery", COMPLETED: "Delivered",
-        RTO_INITIATED: "RTO initiated", RTO_DELIVERED: "RTO delivered" }[o.akidha_status] || o.akidha_status;
+      const allowed = state.next[o.akidha_status || ""] || [];
+      let edit = null;
+      if (allowed.length && o.ULID) {
+        const select = el("select", { ariaLabel: `New Akidha status for ${o.orderID}` },
+          ...state.statuses.map((s) => Object.assign(new Option(akidhaLabel(s), s), { disabled: !allowed.includes(s) })));
+        select.value = allowed[0];
+        const send = el("button", { className: "btn", type: "button", textContent: "Update" });
+        send.onclick = () => updateAkidha(o, select.value, send);
+        edit = el("div", { className: "akidha-edit" }, select, send);
+      }
       return el("td", {},
-        o.akidha_status ? el("span", { className: `badge ${/RTO/.test(o.akidha_status) ? "warn" : "placed"}`, textContent: label })
-          : el("span", { className: "badge", textContent: "Not updated" }),
+        akidhaBadge(o.akidha_status),
         o.akidha_updated_at ? el("div", { className: "muted", textContent: istTime(o.akidha_updated_at) }) : null,
-        o.akidha_error ? el("div", { className: "err-text", textContent: o.akidha_error }) : null);
+        o.akidha_error ? el("div", { className: "err-text", textContent: o.akidha_error }) : null,
+        !o.ULID ? el("div", { className: "muted", textContent: "No ULID" }) : null,
+        edit);
+    }
+
+    function confirmAkidha(order, status) {
+      return new Promise((resolve) => {
+        const dlg = $("confirm");
+        $("confirm-text").textContent = `Order ${order.orderID} (${fullName(order) || "customer"}) will be updated in ${$("akidha-env").textContent}.`;
+        $("confirm-change").replaceChildren(akidhaBadge(order.akidha_status), el("span", { textContent: "→" }), akidhaBadge(status));
+        dlg.returnValue = "cancel";
+        dlg.onclose = () => resolve(dlg.returnValue === "ok");
+        dlg.showModal();
+      });
+    }
+
+    async function updateAkidha(order, status, button) {
+      if (!(await confirmAkidha(order, status))) return;
+      button.disabled = true;
+      button.textContent = "Sending…";
+      try {
+        await api("/api/update-status", { method: "POST", body: JSON.stringify({ orderID: order.orderID, status }) });
+        toast("Akidha updated", `${order.orderID} → ${akidhaLabel(status)}`, "ok");
+      } catch (err) {
+        toast(`Order ${order.orderID} not updated in Akidha`, err.message, "err");
+      }
+      load();
     }
 
     function dpCell(o) {
@@ -255,8 +305,12 @@
       try {
         const data = await api("/api/orders");
         state.orders = data.orders;
-        $("env").textContent = data.env;
         $("env").className = "env" + (data.env === "PROD" ? " prod" : "");
+        $("env").textContent = "DocPharma " + data.env;
+        $("akidha-env").textContent = "Akidha " + data.akidhaEnv;
+        $("akidha-env").className = "env" + (data.akidhaEnv === "PROD" ? " prod" : "");
+        state.statuses = data.statuses || [];
+        state.next = data.next || {};
         render();
       } catch (err) {
         $("rows").replaceChildren(el("tr", {}, el("td", { colSpan: 6, className: "empty load-error" },
@@ -269,7 +323,7 @@
       let data;
       try { data = await api(`/api/payload?orderID=${encodeURIComponent(order.orderID)}`); }
       catch (err) { toast(`Order ${order.orderID}`, err.message, "err"); return; }
-      $("preview-title").textContent = `Order ${order.orderID} → DocPharma (${$("env").textContent})`;
+      $("preview-title").textContent = `Order ${order.orderID} → ${$("env").textContent}`;
       $("preview-problems").replaceChildren(...(data.problems.length
         ? [el("p", { className: "problems", textContent: "Fix before placing: " + data.problems.join("; ") })] : []));
       $("preview-json").textContent = JSON.stringify(data.payload, null, 2);

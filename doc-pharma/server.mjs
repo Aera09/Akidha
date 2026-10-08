@@ -13,8 +13,8 @@ const root = fileURLToPath(new URL(".", import.meta.url));
 const envPath = join(root, ".env");
 try {
   process.loadEnvFile(envPath);
-  const names = Object.keys(process.env).filter((k) => /^(SUPABASE|DOCPHARMA|DASHBOARD)_/.test(k));
-  console.log(`Loaded ${envPath}: ${names.join(", ") || "no SUPABASE_/DOCPHARMA_/DASHBOARD_ settings"}`);
+  const names = Object.keys(process.env).filter((k) => /^(SUPABASE|DOCPHARMA|AKIDHA|DASHBOARD)_/.test(k));
+  console.log(`Loaded ${envPath}: ${names.join(", ") || "no SUPABASE_/DOCPHARMA_/AKIDHA_/DASHBOARD_ settings"}`);
 } catch (err) {
   console.warn(`Could not read ${envPath}: ${err.message}`);
   console.warn("Copy .env.example to .env and fill it in.");
