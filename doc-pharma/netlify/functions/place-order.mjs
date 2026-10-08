@@ -17,7 +17,7 @@ export default async (req) => {
 
   try {
     const order = await fetchOrder(orderID);
-    if (!order) return json(404, { error: `Order ${orderID} is not in docpharma_orders` });
+    if (!order) return json(404, { error: `Order ${orderID} is not in doc_pharma.orders` });
     // Never place the same order twice.
     if (order.dp_status === "PLACED") {
       return json(409, { error: `Order ${orderID} is already placed with DocPharma (${order.dp_fh_order_id}).` });

@@ -13,7 +13,7 @@ export default async (req) => {
 
   try {
     const order = await fetchOrder(orderID);
-    if (!order) return json(404, { error: `Order ${orderID} is not in docpharma_orders` });
+    if (!order) return json(404, { error: `Order ${orderID} is not in doc_pharma.orders` });
     return json(200, buildPayload(order, await fetchOrderItems(order.orderID)));
   } catch (err) {
     console.error(err);

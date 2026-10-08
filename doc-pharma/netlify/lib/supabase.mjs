@@ -1,8 +1,11 @@
 import { env } from "./http.mjs";
 
-function headers(extra = {}) {
+// DocPharma tables live in the doc_pharma schema; SUPER_SHEET_V1 is in public.
+const SCHEMA = "doc_pharma";
+
+function headers(extra = {}, schema = SCHEMA) {
   const key = env("SUPABASE_SERVICE_KEY");
-  return { apikey: key, authorization: `Bearer ${key}`, ...extra };
+  return { apikey: key, authorization: `Bearer ${key}`, "accept-profile": schema, "content-profile": schema, ...extra };
 }
 
 function restUrl(path) {
@@ -17,7 +20,7 @@ async function readJson(res, what) {
 }
 
 export async function fetchOrders() {
-  const res = await fetch(restUrl("docpharma_orders?select=*&order=queued_at.desc"), { headers: headers() });
+  const res = await fetch(restUrl("orders?select=*&order=queued_at.desc"), { headers: headers() });
   return readJson(res, "read");
 }
 
@@ -34,12 +37,12 @@ export async function fetchOrderItems(orderId) {
     `SUPER_SHEET_V1?select=skuCode,medicineName,itemQty,itemMRP,itemDiscountedPrice,shippingCost` +
       `&orderID=eq.${encodeURIComponent(orderId)}&order=medicineName.asc`
   );
-  return readJson(await fetch(url, { headers: headers() }), "read");
+  return readJson(await fetch(url, { headers: headers({}, "public") }), "read");
 }
 
 // Saves what DocPharma returned for an order.
 export async function recordPlacement(orderId, fields) {
-  const url = restUrl(`docpharma_orders?orderID=eq.${encodeURIComponent(orderId)}`);
+  const url = restUrl(`orders?orderID=eq.${encodeURIComponent(orderId)}`);
   const res = await fetch(url, {
     method: "PATCH",
     headers: headers({ "content-type": "application/json", prefer: "return=minimal" }),
@@ -48,12 +51,3 @@ export async function recordPlacement(orderId, fields) {
   if (!res.ok) throw new Error(`Supabase write failed (${res.status}): ${await res.text()}`);
 }
 
-// Stores one webhook call as received.
-export async function logWebhook(row) {
-  const res = await fetch(restUrl("docpharma_webhook_logs"), {
-    method: "POST",
-    headers: headers({ "content-type": "application/json", prefer: "return=minimal" }),
-    body: JSON.stringify(row),
-  });
-  if (!res.ok) throw new Error(`Supabase write failed (${res.status}): ${await res.text()}`);
-}

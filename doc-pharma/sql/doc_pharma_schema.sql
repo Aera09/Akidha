@@ -1,0 +1,196 @@
+-- DocPharma integration, all in its own schema: doc_pharma.
+-- Run in the Supabase SQL editor. Safe to run again.
+-- Nothing in public."Order_Level_V4" is changed: the trigger only reads it.
+--
+--   doc_pharma.orders        one row per order: order details, what DocPharma
+--                            returned and reported, and the status pushed to Akidha
+--   doc_pharma.webhook_logs  every webhook call from DocPharma, as received
+--
+-- >>> Trigger status: change 'READY_FOR_DOCPHARMA' (two places below) to the
+-- >>> Order_Level_V4 status that means "send this order to DocPharma".
+--
+-- After running: Supabase -> Project Settings -> API -> Exposed schemas,
+-- add doc_pharma (the dashboard and edge function read it through the API).
+
+CREATE SCHEMA IF NOT EXISTS doc_pharma;
+
+-- Only the service role key (dashboard server functions and the edge function)
+-- uses this schema.
+GRANT USAGE ON SCHEMA doc_pharma TO service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA doc_pharma GRANT ALL ON TABLES TO service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA doc_pharma GRANT ALL ON SEQUENCES TO service_role;
+
+CREATE TABLE IF NOT EXISTS doc_pharma.orders (
+    "orderID"           text PRIMARY KEY,
+    "ULID"              text,
+    "orderDate"         timestamptz,
+    "paymentMode"       text,
+    "cxPhone"           text,
+    cx_first_name       text,
+    cx_last_name        text,
+    cx_add_street_1     text,
+    cx_add_street_2     text,
+    city                text,
+    state               text,
+    pincode             text,
+    "finalAmount"       numeric,
+    status              text,            -- current status in Order_Level_V4
+    queued_at           timestamptz NOT NULL DEFAULT now(),
+
+    -- Place order (dashboard -> DocPharma)
+    dp_status           text,            -- PLACED or FAILED
+    dp_fh_order_id      text,            -- data.fh_order_id
+    dp_order_number     text,            -- order_number
+    dp_error            text,
+    dp_response         jsonb,
+    dp_placed_at        timestamptz,
+
+    -- Status updates (DocPharma webhook -> edge function)
+    dp_order_status     text,            -- top-level status, e.g. in-progress, delivered
+    dp_suborder_status  text,            -- e.g. invoiced, shipped, reattempt, delivered
+    dp_status_code      integer,
+    dp_logistic_status  text,            -- logistic_details.current_status
+    dp_tracking_number  text,
+    dp_tracking_url     text,
+    dp_delivery_partner text,
+    dp_invoice_url      text,
+    dp_status_reason    text,
+    dp_last_event       jsonb,
+    dp_last_event_at    timestamptz,
+
+    -- Akidha OMS (edge function -> Akidha)
+    akidha_status       text,            -- last status Akidha accepted
+    akidha_updated_at   timestamptz,
+    akidha_error        text,
+
+    updated_at          timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS doc_pharma.webhook_logs (
+    id               bigserial PRIMARY KEY,
+    received_at      timestamptz NOT NULL DEFAULT now(),
+    partner_order_id text,
+    order_status     text,
+    suborder_status  text,
+    status_code      integer,
+    matched          boolean NOT NULL DEFAULT false,   -- found in doc_pharma.orders?
+    akidha_result    text,                             -- what was sent to Akidha, or why not
+    payload          jsonb
+);
+CREATE INDEX IF NOT EXISTS webhook_logs_order_idx ON doc_pharma.webhook_logs (partner_order_id, received_at DESC);
+
+GRANT ALL ON ALL TABLES IN SCHEMA doc_pharma TO service_role;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA doc_pharma TO service_role;
+ALTER TABLE doc_pharma.orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE doc_pharma.webhook_logs ENABLE ROW LEVEL SECURITY;
+
+CREATE OR REPLACE FUNCTION doc_pharma.safe_timestamp(v text)
+RETURNS timestamptz LANGUAGE plpgsql STABLE AS $$
+BEGIN
+    RETURN v::timestamptz;
+EXCEPTION WHEN OTHERS THEN
+    RETURN NULL;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION doc_pharma.safe_numeric(v text)
+RETURNS numeric LANGUAGE plpgsql IMMUTABLE AS $$
+BEGIN
+    RETURN nullif(regexp_replace(v, '[^0-9.\-]', '', 'g'), '')::numeric;
+EXCEPTION WHEN OTHERS THEN
+    RETURN NULL;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION doc_pharma.sync_order()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = doc_pharma, public
+AS $$
+BEGIN
+    -- Never let a problem here block the write to Order_Level_V4.
+    BEGIN
+        IF upper(NEW.status::text) = 'READY_FOR_DOCPHARMA' THEN
+            INSERT INTO doc_pharma.orders (
+                "orderID", "ULID", "orderDate", "paymentMode", "cxPhone",
+                cx_first_name, cx_last_name, cx_add_street_1, cx_add_street_2,
+                city, state, pincode, "finalAmount", status
+            )
+            VALUES (
+                NEW."orderID"::text, NEW."ULID"::text,
+                doc_pharma.safe_timestamp(NEW."orderDate"::text),
+                NEW."paymentMode"::text, NEW."cxPhone"::text,
+                NEW.cx_first_name::text, NEW.cx_last_name::text,
+                NEW.cx_add_street_1::text, NEW.cx_add_street_2::text,
+                NEW.city::text, NEW.state::text, NEW."pinCode"::text,
+                doc_pharma.safe_numeric(NEW."finalAmount"::text),
+                NEW.status::text
+            )
+            ON CONFLICT ("orderID") DO UPDATE SET
+                "ULID"          = EXCLUDED."ULID",
+                "orderDate"     = EXCLUDED."orderDate",
+                "paymentMode"   = EXCLUDED."paymentMode",
+                "cxPhone"       = EXCLUDED."cxPhone",
+                cx_first_name   = EXCLUDED.cx_first_name,
+                cx_last_name    = EXCLUDED.cx_last_name,
+                cx_add_street_1 = EXCLUDED.cx_add_street_1,
+                cx_add_street_2 = EXCLUDED.cx_add_street_2,
+                city            = EXCLUDED.city,
+                state           = EXCLUDED.state,
+                pincode         = EXCLUDED.pincode,
+                "finalAmount"   = EXCLUDED."finalAmount",
+                status          = EXCLUDED.status,
+                updated_at      = now();
+        ELSE
+            -- Only orders that already reached the trigger status are tracked.
+            UPDATE doc_pharma.orders SET
+                "ULID"          = NEW."ULID"::text,
+                "orderDate"     = doc_pharma.safe_timestamp(NEW."orderDate"::text),
+                "paymentMode"   = NEW."paymentMode"::text,
+                "cxPhone"       = NEW."cxPhone"::text,
+                cx_first_name   = NEW.cx_first_name::text,
+                cx_last_name    = NEW.cx_last_name::text,
+                cx_add_street_1 = NEW.cx_add_street_1::text,
+                cx_add_street_2 = NEW.cx_add_street_2::text,
+                city            = NEW.city::text,
+                state           = NEW.state::text,
+                pincode         = NEW."pinCode"::text,
+                "finalAmount"   = doc_pharma.safe_numeric(NEW."finalAmount"::text),
+                status          = NEW.status::text,
+                updated_at      = now()
+            WHERE "orderID" = NEW."orderID"::text;
+        END IF;
+    EXCEPTION WHEN OTHERS THEN
+        RAISE WARNING 'doc_pharma.sync_order skipped order %: %', NEW."orderID", SQLERRM;
+    END;
+    RETURN NEW;
+END;
+$$;
+
+-- Earlier version kept these in public; remove its trigger and function.
+-- (public.docpharma_orders, if it exists, is left as it is.)
+DROP TRIGGER IF EXISTS trg_sync_docpharma_order ON public."Order_Level_V4";
+DROP FUNCTION IF EXISTS public.sync_docpharma_order();
+
+DROP TRIGGER IF EXISTS trg_doc_pharma_sync_order ON public."Order_Level_V4";
+CREATE TRIGGER trg_doc_pharma_sync_order
+AFTER INSERT OR UPDATE ON public."Order_Level_V4"
+FOR EACH ROW EXECUTE FUNCTION doc_pharma.sync_order();
+
+-- Copy in the orders that already have the trigger status.
+INSERT INTO doc_pharma.orders (
+    "orderID", "ULID", "orderDate", "paymentMode", "cxPhone",
+    cx_first_name, cx_last_name, cx_add_street_1, cx_add_street_2,
+    city, state, pincode, "finalAmount", status
+)
+SELECT
+    "orderID"::text, "ULID"::text, doc_pharma.safe_timestamp("orderDate"::text),
+    "paymentMode"::text, "cxPhone"::text,
+    cx_first_name::text, cx_last_name::text,
+    cx_add_street_1::text, cx_add_street_2::text,
+    city::text, state::text, "pinCode"::text,
+    doc_pharma.safe_numeric("finalAmount"::text), status::text
+FROM public."Order_Level_V4"
+WHERE upper(status::text) = 'READY_FOR_DOCPHARMA'
+ON CONFLICT ("orderID") DO NOTHING;

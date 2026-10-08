@@ -1,38 +1,76 @@
 # DocPharma integration
 
 Places Akidha orders with DocPharma through the DocPharma Partner API
-(`POST {baseUrl}/v2/place-order/`, `x-api-key` header).
+(`POST {baseUrl}/v2/place-order/`, `x-api-key` header), takes DocPharma's
+status updates through a Supabase Edge Function, and pushes the matching
+status to Akidha OMS.
 
 ```
 Order_Level_V4 (status = READY_FOR_DOCPHARMA)
    │  trigger
    ▼
-docpharma_orders (Supabase)  +  SUPER_SHEET_V1 (items)
+doc_pharma.orders  (+ SUPER_SHEET_V1 for items)
    │  dashboard: Preview → Place Order
    ▼
-DocPharma place-order  →  fh_order_id / order_number saved back on the row
+DocPharma place-order ── fh_order_id / order_number saved on the row
+   │  webhook (shipped, out for delivery, delivered, RTO …)
+   ▼
+Edge Function docpharma-webhook
+   ├─ updates doc_pharma.orders, logs to doc_pharma.webhook_logs
+   └─ Akidha OMS  PUT /orders/{ULID}/status/{STATUS}, one step at a time
 ```
 
 Separate project from the HL/Viable dashboard in the repository root: its own
 `.env`, its own Netlify site (base directory `doc-pharma`), port 8889 locally.
 
-## 1. Supabase
+## 1. Supabase: schema and table
 
-Open `sql/docpharma_orders.sql`, change `'READY_FOR_DOCPHARMA'` (two places) to
-the `Order_Level_V4` status that means "send to DocPharma", and run it once in
-the Supabase SQL editor. It does not change `Order_Level_V4` and does not
-touch the HL/Viable table or trigger. Running it again is safe.
+Open `sql/doc_pharma_schema.sql`, change `'READY_FOR_DOCPHARMA'` (two places)
+to the `Order_Level_V4` status that means "send to DocPharma", and run it in
+the Supabase SQL editor. It creates the `doc_pharma` schema with
+`doc_pharma.orders` and `doc_pharma.webhook_logs`, and a trigger on
+`Order_Level_V4` that only reads it. It does not change `Order_Level_V4` or
+the HL/Viable table. Running it again is safe.
 
-## 2. Run locally
+Then **Project Settings → API → Exposed schemas**: add `doc_pharma` and save.
+The dashboard and the edge function read the schema through the API.
+
+## 2. Supabase: edge function (webhook)
 
 ```bash
 cd doc-pharma
-cp .env.example .env      # fill in Supabase key and DocPharma API key
+supabase login
+supabase link --project-ref <project-ref>
+supabase secrets set DOCPHARMA_WEBHOOK_SECRET=<long random text> \
+  AKIDHA_ENV=STAGE \
+  AKIDHA_BASE_URL_STAGE=https://stageapi.akidha.in AKIDHA_EMAIL_STAGE=... AKIDHA_PASSWORD_STAGE=... \
+  AKIDHA_BASE_URL_PROD=https://api.akidha.in AKIDHA_EMAIL_PROD=... AKIDHA_PASSWORD_PROD=...
+supabase functions deploy docpharma-webhook --no-verify-jwt
+```
+
+(Without the CLI: Supabase → Edge Functions → Deploy a new function, name
+`docpharma-webhook`, paste `index.ts` and `logic.ts`, turn off "Verify JWT",
+and add the same secrets under Edge Functions → Secrets.)
+
+`--no-verify-jwt` is needed because DocPharma does not send a Supabase key;
+the function checks `?token=` against `DOCPHARMA_WEBHOOK_SECRET` instead and
+answers 401 otherwise.
+
+## 3. Run the dashboard locally
+
+```bash
+cd doc-pharma
+cp .env.example .env      # Supabase key, DocPharma API key, same DOCPHARMA_WEBHOOK_SECRET
 npm start                 # http://localhost:8889
 ```
 
 `DOCPHARMA_ENV=DEV` uses `https://partner-api.dev.docpharma.in`; set it to
 `PROD` for `https://partner-api.docpharma.in`. Restart after changing `.env`.
+
+With `DOCPHARMA_WEBHOOK_SECRET` set, every order placed sends DocPharma
+`webhook_url = SUPABASE_URL/functions/v1/docpharma-webhook?token=...`. Orders
+placed before that won't send updates. Because the webhook runs on Supabase,
+it works even while the dashboard runs on localhost.
 
 ## How an order is mapped
 
@@ -48,29 +86,32 @@ npm start                 # http://localhost:8889
 | `order_details[]` | `SUPER_SHEET_V1`: `skuCode`, `medicineName`, `itemQty`, `itemMRP`; `discount_amount` = (MRP − `itemDiscountedPrice`) × qty |
 | `shipping_charges` | `SUPER_SHEET_V1.shippingCost` |
 | `order_type` | `SDD_NDD` (can be overridden with `DOCPHARMA_ORDER_TYPE_<ENV>`) |
-| `webhook_url` | `DOCPHARMA_PUBLIC_URL/api/docpharma-webhook?token=DOCPHARMA_WEBHOOK_SECRET`, when both are set |
+| `webhook_url` | the edge function URL above, when `DOCPHARMA_WEBHOOK_SECRET` is set |
 | `vendor_code` | `DOCPHARMA_VENDOR_CODE` if set |
 
 Preview shows the exact JSON before anything is sent. An order is not sent if
 the name, 10-digit mobile, 6-digit pincode, address or items are missing, and
 an order already placed cannot be placed again.
 
-## Status updates (webhook)
+## DocPharma status → Akidha OMS
 
-Run `sql/docpharma_webhook.sql` once (after `docpharma_orders.sql`). It adds
-status columns to `docpharma_orders` and a `docpharma_webhook_logs` table.
+| DocPharma reports | Akidha status |
+|---|---|
+| invoiced, reattempt, anything else | no change |
+| shipped / picked / dispatched / in transit | `SHIPMENT_PICKED_UP` |
+| out for delivery | `OUT_FOR_DELIVERY` |
+| delivered | `COMPLETED` |
+| RTO | `RTO_INITIATED` |
+| RTO delivered / returned | `RTO_DELIVERED` |
 
-Set `DOCPHARMA_PUBLIC_URL` (the deployed Netlify site URL) and
-`DOCPHARMA_WEBHOOK_SECRET` (any long random text). Every order placed after
-that tells DocPharma to post updates to
-`DOCPHARMA_PUBLIC_URL/api/docpharma-webhook?token=...`. The endpoint:
+Akidha moves one step at a time, so missing steps are sent in order (e.g. a
+first "delivered" sends picked up → out for delivery → completed). If Akidha
+refuses a step, the order keeps the last accepted status in `akidha_status`
+and the reason in `akidha_error`. A late event (e.g. reattempt after
+delivered) never moves an order back. To change the mapping, edit
+`akidhaTarget` in `supabase/functions/docpharma-webhook/logic.ts` and deploy
+again.
 
-- rejects calls without the right token (401)
-- stores every call in `docpharma_webhook_logs`, matched to an order or not
-- updates the order's `dp_order_status`, `dp_suborder_status`,
-  `dp_status_code`, `dp_logistic_status`, `dp_status_reason` from the latest
-  event, and keeps the tracking number/URL, courier and invoice URL
-
-The dashboard shows the latest status, courier, reason, and Track / Invoice
-links. DocPharma cannot reach `localhost`, so webhooks only arrive once the
-site is deployed. Orders placed before the URL was set won't send updates.
+Every webhook call is stored in `doc_pharma.webhook_logs` with what was sent
+to Akidha (`akidha_result`). The dashboard shows the DocPharma status, courier,
+Track / Invoice links, and the Akidha status or error.

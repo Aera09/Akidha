@@ -17,18 +17,18 @@ function setting(name, fallback) {
 
 const optional = (name) => (process.env[name] || "").trim();
 
-// Where DocPharma should post status updates: this site's webhook function,
-// with the shared secret as ?token=. Empty until both settings are set.
+// Where DocPharma should post status updates: the docpharma-webhook Supabase
+// Edge Function, with the shared secret as ?token=. Empty until the secret is set.
 export function webhookUrlFor() {
-  const site = optional("DOCPHARMA_PUBLIC_URL").replace(/\/+$/, "");
   const secret = optional("DOCPHARMA_WEBHOOK_SECRET");
-  return site && secret ? `${site}/api/docpharma-webhook?token=${encodeURIComponent(secret)}` : "";
+  const supabase = optional("SUPABASE_URL").replace(/\/+$/, "").replace(/\/rest\/v1$/, "");
+  return secret && supabase ? `${supabase}/functions/v1/docpharma-webhook?token=${encodeURIComponent(secret)}` : "";
 }
 
 // Last 10 digits, so "+91 98765 43210" becomes "9876543210".
 const mobile10 = (phone) => String(phone ?? "").replace(/\D/g, "").slice(-10);
 
-// Builds the place-order body for one docpharma_orders row and its
+// Builds the place-order body for one doc_pharma.orders row and its
 // SUPER_SHEET_V1 item lines. Returns { payload, problems } where problems
 // lists anything DocPharma marks mandatory that is missing.
 export function buildPayload(order, items) {

@@ -98,8 +98,8 @@
     <section class="panel">
       <div class="toolbar"><input id="q" type="search" placeholder="Search order ID, name, phone, pincode…" autocomplete="off"></div>
       <table>
-        <thead><tr><th>Order</th><th>Customer</th><th>Payment</th><th>DocPharma</th><th style="text-align:right">Actions</th></tr></thead>
-        <tbody id="rows"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
+        <thead><tr><th>Order</th><th>Customer</th><th>Payment</th><th>DocPharma</th><th>Akidha OMS</th><th style="text-align:right">Actions</th></tr></thead>
+        <tbody id="rows"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody>
       </table>
     </section>
   </main>
@@ -165,6 +165,17 @@
       return "placed";
     }
 
+    // What the edge function last pushed to Akidha OMS for this order.
+    function akidhaCell(o) {
+      const label = { SHIPMENT_PICKED_UP: "Picked up", OUT_FOR_DELIVERY: "Out for delivery", COMPLETED: "Delivered",
+        RTO_INITIATED: "RTO initiated", RTO_DELIVERED: "RTO delivered" }[o.akidha_status] || o.akidha_status;
+      return el("td", {},
+        o.akidha_status ? el("span", { className: `badge ${/RTO/.test(o.akidha_status) ? "warn" : "placed"}`, textContent: label })
+          : el("span", { className: "badge", textContent: "Not updated" }),
+        o.akidha_updated_at ? el("div", { className: "muted", textContent: new Date(o.akidha_updated_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) }) : null,
+        o.akidha_error ? el("div", { className: "err-text", textContent: o.akidha_error }) : null);
+    }
+
     function dpCell(o) {
       if (o.dp_status === "PLACED") {
         // Latest webhook status, if DocPharma has sent one.
@@ -199,8 +210,8 @@
       const q = state.q.trim().toLowerCase();
       const rows = o.filter((x) => !q || [x.orderID, fullName(x), x.cxPhone, x.pincode, x.city].some((v) => String(v ?? "").toLowerCase().includes(q)));
       if (!rows.length) {
-        $("rows").replaceChildren(el("tr", {}, el("td", { colSpan: 5, className: "empty" },
-          el("strong", { textContent: o.length ? "No matching orders" : "No orders in docpharma_orders yet" }))));
+        $("rows").replaceChildren(el("tr", {}, el("td", { colSpan: 6, className: "empty" },
+          el("strong", { textContent: o.length ? "No matching orders" : "No orders in doc_pharma.orders yet" }))));
         return;
       }
       $("rows").replaceChildren(...rows.map((x) => {
@@ -216,6 +227,7 @@
             el("div", { className: "muted", textContent: join([x.city, x.pincode], " – ") })),
           el("td", {}, el("div", { textContent: x.paymentMode || "—" }), el("div", { className: "muted", textContent: money(x.finalAmount) + (isCod(x.paymentMode) ? " to collect" : "") })),
           dpCell(x),
+          akidhaCell(x),
           el("td", {}, el("div", { className: "actions" }, preview, place)));
       }));
     }
@@ -228,7 +240,7 @@
         $("env").className = "env" + (data.env === "PROD" ? " prod" : "");
         render();
       } catch (err) {
-        $("rows").replaceChildren(el("tr", {}, el("td", { colSpan: 5, className: "empty load-error" },
+        $("rows").replaceChildren(el("tr", {}, el("td", { colSpan: 6, className: "empty load-error" },
           el("strong", { textContent: "Couldn't load orders" }), el("div", { className: "mono", textContent: err.message }))));
       }
     }
